@@ -8,33 +8,38 @@ from streamlit_autorefresh import st_autorefresh
 
 FRACTION_PRECISION = 3
 
-st.set_page_config(page_title="Depot Rebalancer", layout="wide")
-st.title("📊 Depot Rebalancer — Manuelle Shares Eingabe & Euro")
+st.set_page_config(page_title="Optimiertes Musterdepot", layout="wide")
+st.title("💼 Optimiertes Musterdepot — Manuelle Shares Eingabe & Euro")
 
 # --- Sidebar Einstellungen ---
 st.sidebar.header("Einstellungen")
 refresh_interval = st.sidebar.slider("Automatische Kursaktualisierung (Minuten)", 1, 30, 5)
 st_autorefresh(interval=refresh_interval * 60 * 1000, key="auto_refresh")
 
-# --- Depotdefinition nach deinem Sparplan ---
+# --- Optimiertes Musterdepot (Start 6. Nov 2025) ---
 data = [
     # Technologie & KI
     {"Ticker":"NVDA","Name":"NVIDIA","Sector":"Tech","Currency":"USD"},
-    {"Ticker":"GOOGL","Name":"Alphabet","Sector":"Tech","Currency":"USD"},
     {"Ticker":"MSFT","Name":"Microsoft","Sector":"Tech","Currency":"USD"},
-    # Erneuerbare Energien & Infrastruktur
-    {"Ticker":"NEE","Name":"NextEra Energy","Sector":"Renewable","Currency":"USD"},
+    {"Ticker":"GOOGL","Name":"Alphabet","Sector":"Tech","Currency":"USD"},
+    {"Ticker":"ASML.AS","Name":"ASML","Sector":"Tech","Currency":"EUR"},
+    # Cybersecurity / Cloud
+    {"Ticker":"CRWD","Name":"CrowdStrike","Sector":"Cybersecurity","Currency":"USD"},
+    {"Ticker":"NOW","Name":"ServiceNow","Sector":"Cybersecurity","Currency":"USD"},
+    # Erneuerbare Energien & Infra
     {"Ticker":"FSLR","Name":"First Solar","Sector":"Renewable","Currency":"USD"},
-    {"Ticker":"ORSTED.CO","Name":"Ørsted","Sector":"Renewable","Currency":"EUR"},
-    # Zukunftstechnologien / Disruption
+    {"Ticker":"NEE","Name":"NextEra Energy","Sector":"Renewable","Currency":"USD"},
+    {"Ticker":"BEPC","Name":"Brookfield Renewable","Sector":"Renewable","Currency":"USD"},
+    # Zukunft / Disruption
     {"Ticker":"TSLA","Name":"Tesla","Sector":"Disruption","Currency":"USD"},
-    {"Ticker":"PLUG","Name":"Plug Power","Sector":"Disruption","Currency":"USD"},
     {"Ticker":"PLTR","Name":"Palantir","Sector":"Disruption","Currency":"USD"},
-    # Blue Chips
-    {"Ticker":"AAPL","Name":"Apple","Sector":"Blue Chips","Currency":"USD"},
-    {"Ticker":"JNJ","Name":"Johnson & Johnson","Sector":"Blue Chips","Currency":"USD"},
-    # VW-Bestand
-    {"Ticker":"VOW3.DE","Name":"Volkswagen","Sector":"Blue Chips","Currency":"EUR"}
+    {"Ticker":"SMCI","Name":"Super Micro Computer","Sector":"Disruption","Currency":"USD"},
+    # Gesundheit / Stabilität
+    {"Ticker":"JNJ","Name":"Johnson & Johnson","Sector":"Health","Currency":"USD"},
+    {"Ticker":"NVO","Name":"Novo Nordisk","Sector":"Health","Currency":"USD"},
+    # Konsum & Industrie
+    {"Ticker":"AAPL","Name":"Apple","Sector":"Consumer","Currency":"USD"},
+    {"Ticker":"VOW3.DE","Name":"Volkswagen","Sector":"Consumer","Currency":"EUR"},
 ]
 
 df = pd.DataFrame(data)
@@ -75,7 +80,7 @@ if st.session_state.refresh or "Price" not in df.columns:
 if "shares_dict" not in st.session_state:
     st.session_state.shares_dict = {t:0 for t in df["Ticker"]}
     # VW Bestand initial
-    st.session_state.shares_dict["VOW3.DE"] = 57.0
+    st.session_state.shares_dict["VOW3.DE"] = 5300 / get_price(df[df["Ticker"]=="VOW3.DE"].iloc[0])
 
 # --- Editable DataFrame aus session_state erstellen ---
 if "editable_df" not in st.session_state:
@@ -106,10 +111,12 @@ st.write(f"Stand: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S (UTC)')} — Ge
 
 # --- Umschichtungsvorschläge (optional nach Sparplan-Gewichten) ---
 target_weights = {
-    "Tech":200/500,
-    "Renewable":125/500,
-    "Disruption":100/500,
-    "Blue Chips":75/500,
+    "Tech":0.4,
+    "Cybersecurity":0.1,
+    "Renewable":0.2,
+    "Disruption":0.15,
+    "Health":0.1,
+    "Consumer":0.05,
 }
 sector_values = df.groupby("Sector")["MarketValue"].sum().to_dict()
 sector_weights = {s:(sector_values.get(s,0)/total_value if total_value>0 else 0) for s in target_weights.keys()}

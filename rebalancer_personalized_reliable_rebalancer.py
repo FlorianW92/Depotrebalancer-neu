@@ -75,30 +75,35 @@ if st.session_state.refresh or "Price" not in df.columns:
         df.at[i, "Price"] = get_price(row)
     st.session_state.refresh = False
 
-# --- Initial Shares Berechnung (nur bei leerem Wert) ---
-for i, row in df.iterrows():
-    if pd.isna(row.get("Shares")) or row["Shares"]==0:
+# --- Initial Shares Berechnung (nur einmal, persistent) ---
+if "SharesInitialized" not in st.session_state:
+    shares_list = []
+    for i, row in df.iterrows():
         if row["Ticker"]=="VOW3.DE":
-            df.at[i, "Shares"] = 57.0
+            shares_list.append(57.0)
         else:
             p = row["Price"]
             if pd.notna(p) and p>0 and row["MonthlyAlloc"]>0:
-                invested = row["MonthlyAlloc"] * 12
-                df.at[i, "Shares"] = round(invested / p, FRACTION_PRECISION)
+                shares_list.append(round(row["MonthlyAlloc"]*12 / p, FRACTION_PRECISION))
+            else:
+                shares_list.append(0.0)
+    df["Shares"] = shares_list
+    st.session_state.SharesInitialized = True
 
-# --- MarketValue nach Shares x Price ---
+# --- MarketValue immer berechnen ---
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 
 # --- Editable Portfolio ---
 st.subheader("Depot bearbeiten")
-editable = st.data_editor(df[["Ticker","Name","Shares","Price","Sector","MonthlyAlloc","MarketValue"]],
+editable = st.data_editor(df[["Ticker","Name","Shares","Price","Sector","MonthlyAlloc"]],
                           num_rows="dynamic", use_container_width=True)
 
-# Nachbearbeitung: aktualisiere df aus editable
+# --- Persistente Übernahme der Shares ---
 for i, row in editable.iterrows():
     df.at[i, "Shares"] = row["Shares"]
-    df.at[i, "MarketValue"] = round(row["Shares"] * row["Price"],2)
+df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 
+# --- Gesamtwert anzeigen ---
 total_value = df["MarketValue"].sum()
 st.write(f"Stand: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S (UTC)')} — Gesamtwert: {total_value:,.2f} €")
 

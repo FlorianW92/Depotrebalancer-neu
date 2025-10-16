@@ -65,26 +65,31 @@ def get_price(row):
     except:
         return np.nan
 
-# --- Kursaktualisierung nur Preis, Shares bleiben unverändert ---
+# --- Kursaktualisierung nur Preis, Shares persistent ---
 if st.session_state.refresh or "Price" not in df.columns:
     df["Price"] = df.apply(get_price, axis=1)
     st.session_state.refresh = False
 
-# --- Sicherstellen, dass Shares-Spalte existiert ---
-if "Shares" not in df.columns:
-    df["Shares"] = np.nan  # NaN, um zu erkennen, was noch initialisiert werden muss
-
-# --- Initial Shares Berechnung (nur wenn Shares NaN sind) ---
-for i, row in df.iterrows():
-    if pd.isna(row["Shares"]):
+# --- Persistent Shares in session_state ---
+if "shares_dict" not in st.session_state:
+    st.session_state.shares_dict = {}
+    for i, row in df.iterrows():
         if row["Ticker"]=="VOW3.DE":
-            df.at[i, "Shares"] = 57.0
+            st.session_state.shares_dict[row["Ticker"]] = 57.0
         else:
-            p = row.get("Price", 0)
-            if p > 0 and row.get("MonthlyAlloc",0) > 0:
-                df.at[i, "Shares"] = round(row["MonthlyAlloc"]*12 / p, FRACTION_PRECISION)
-            else:
-                df.at[i, "Shares"] = 0.0
+            st.session_state.shares_dict[row["Ticker"]] = np.nan  # NaN für automatische Initialisierung
+
+# --- Initialisierung für NaN-Shares ---
+for i, row in df.iterrows():
+    ticker = row["Ticker"]
+    if pd.isna(st.session_state.shares_dict[ticker]):
+        p = row.get("Price", 0)
+        if p > 0 and row.get("MonthlyAlloc",0) > 0:
+            st.session_state.shares_dict[ticker] = round(row["MonthlyAlloc"]*12 / p, FRACTION_PRECISION)
+        else:
+            st.session_state.shares_dict[ticker] = 0.0
+
+df["Shares"] = df["Ticker"].map(st.session_state.shares_dict)
 
 # --- MarketValue berechnen ---
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
@@ -94,18 +99,19 @@ st.subheader("Depot bearbeiten")
 editable = st.data_editor(df[["Ticker","Name","Shares","Price","Sector","MonthlyAlloc"]],
                           num_rows="dynamic", use_container_width=True)
 
-# --- Persistente Übernahme der Shares aus Editable ---
-for i, row in editable.iterrows():
-    df.at[i, "Shares"] = row["Shares"]
+# --- Übernahme der geänderten Shares ---
+for _, row in editable.iterrows():
+    st.session_state.shares_dict[row["Ticker"]] = row["Shares"]
 
 # --- MarketValue aktualisieren ---
+df["Shares"] = df["Ticker"].map(st.session_state.shares_dict)
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 
 # --- Gesamtwert ---
 total_value = df["MarketValue"].sum()
 st.write(f"Stand: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S (UTC)')} — Gesamtwert: {total_value:,.2f} €")
 
-# --- Automatische Umschichtungsvorschläge ---
+# --- Umschichtungsvorschläge ---
 target_weights = {"Tech":0.40,"Cyber":0.10,"Renewable":0.20,"Disruption":0.15,"Health":0.10,"Consumer":0.05,"Blue Chips":0.0}
 sector_values = df.groupby("Sector")["MarketValue"].sum().to_dict()
 sector_weights = {s:(sector_values.get(s,0)/total_value if total_value>0 else 0) for s in target_weights.keys()}
@@ -127,7 +133,7 @@ if suggestions:
 else:
     st.success("Keine Umschichtungen nötig")
 
-# --- Sektorverteilung Pie-Chart ---
+# --- Pie-Chart Sektorverteilung ---
 st.subheader("Sektorverteilung")
 labels = list(target_weights.keys())
 sizes = [sector_weights.get(s,0) for s in labels]
@@ -139,7 +145,7 @@ if sum(sizes) > 0:
 else:
     st.info("Keine Werte im Depot vorhanden, daher keine Grafik.")
 
-# --- Prozentuale Darstellung der Aktien innerhalb jedes Sektors ---
+# --- Prozentuale Aktienanteile innerhalb der Sektoren ---
 st.subheader("Aktienanteile innerhalb der Sektoren")
 sector_groups = df.groupby("Sector")
 for sector, group in sector_groups:

@@ -72,24 +72,21 @@ if st.session_state.refresh or "Price" not in df.columns:
 
 # --- Sicherstellen, dass Shares-Spalte existiert ---
 if "Shares" not in df.columns:
-    df["Shares"] = 0.0
+    df["Shares"] = np.nan  # NaN, um zu erkennen, was noch initialisiert werden muss
 
-# --- Initial Shares Berechnung (nur einmal) ---
-if "SharesInitialized" not in st.session_state:
-    shares_list = []
-    for i, row in df.iterrows():
+# --- Initial Shares Berechnung (nur wenn Shares NaN sind) ---
+for i, row in df.iterrows():
+    if pd.isna(row["Shares"]):
         if row["Ticker"]=="VOW3.DE":
-            shares_list.append(57.0)
+            df.at[i, "Shares"] = 57.0
         else:
             p = row.get("Price", 0)
             if p > 0 and row.get("MonthlyAlloc",0) > 0:
-                shares_list.append(round(row["MonthlyAlloc"]*12 / p, FRACTION_PRECISION))
+                df.at[i, "Shares"] = round(row["MonthlyAlloc"]*12 / p, FRACTION_PRECISION)
             else:
-                shares_list.append(0.0)
-    df["Shares"] = shares_list
-    st.session_state.SharesInitialized = True
+                df.at[i, "Shares"] = 0.0
 
-# --- MarketValue immer berechnen ---
+# --- MarketValue berechnen ---
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 
 # --- Editable Portfolio ---
@@ -97,9 +94,11 @@ st.subheader("Depot bearbeiten")
 editable = st.data_editor(df[["Ticker","Name","Shares","Price","Sector","MonthlyAlloc"]],
                           num_rows="dynamic", use_container_width=True)
 
-# --- Persistente Übernahme der Shares ---
+# --- Persistente Übernahme der Shares aus Editable ---
 for i, row in editable.iterrows():
     df.at[i, "Shares"] = row["Shares"]
+
+# --- MarketValue aktualisieren ---
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 
 # --- Gesamtwert ---
@@ -150,4 +149,3 @@ for sector, group in sector_groups:
         temp = group.copy()
         temp["PercentOfSector"] = (temp["MarketValue"]/sector_total*100).round(2)
         st.dataframe(temp[["Ticker","Name","Shares","Price","MarketValue","PercentOfSector"]])
-

@@ -6,8 +6,6 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
-FRACTION_PRECISION = 3
-
 st.set_page_config(page_title="Optimiertes Musterdepot", layout="wide")
 st.title("💼 Optimiertes Musterdepot — Manuelle Shares Eingabe & Euro")
 
@@ -16,28 +14,22 @@ st.sidebar.header("Einstellungen")
 refresh_interval = st.sidebar.slider("Automatische Kursaktualisierung (Minuten)", 1, 30, 5)
 st_autorefresh(interval=refresh_interval * 60 * 1000, key="auto_refresh")
 
-# --- Optimiertes Musterdepot (Start 6. Nov 2025) ---
+# --- Optimiertes Musterdepot ---
 data = [
-    # Technologie & KI
     {"Ticker":"NVDA","Name":"NVIDIA","Sector":"Tech","Currency":"USD"},
     {"Ticker":"MSFT","Name":"Microsoft","Sector":"Tech","Currency":"USD"},
     {"Ticker":"GOOGL","Name":"Alphabet","Sector":"Tech","Currency":"USD"},
     {"Ticker":"ASML.AS","Name":"ASML","Sector":"Tech","Currency":"EUR"},
-    # Cybersecurity / Cloud
     {"Ticker":"CRWD","Name":"CrowdStrike","Sector":"Cybersecurity","Currency":"USD"},
     {"Ticker":"NOW","Name":"ServiceNow","Sector":"Cybersecurity","Currency":"USD"},
-    # Erneuerbare Energien & Infra
     {"Ticker":"FSLR","Name":"First Solar","Sector":"Renewable","Currency":"USD"},
     {"Ticker":"NEE","Name":"NextEra Energy","Sector":"Renewable","Currency":"USD"},
     {"Ticker":"BEPC","Name":"Brookfield Renewable","Sector":"Renewable","Currency":"USD"},
-    # Zukunft / Disruption
     {"Ticker":"TSLA","Name":"Tesla","Sector":"Disruption","Currency":"USD"},
     {"Ticker":"PLTR","Name":"Palantir","Sector":"Disruption","Currency":"USD"},
     {"Ticker":"SMCI","Name":"Super Micro Computer","Sector":"Disruption","Currency":"USD"},
-    # Gesundheit / Stabilität
     {"Ticker":"JNJ","Name":"Johnson & Johnson","Sector":"Health","Currency":"USD"},
     {"Ticker":"NVO","Name":"Novo Nordisk","Sector":"Health","Currency":"USD"},
-    # Konsum & Industrie
     {"Ticker":"AAPL","Name":"Apple","Sector":"Consumer","Currency":"USD"},
     {"Ticker":"VOW3.DE","Name":"Volkswagen","Sector":"Consumer","Currency":"EUR"},
 ]
@@ -79,37 +71,36 @@ if st.session_state.refresh or "Price" not in df.columns:
 # --- Persistent Shares ---
 if "shares_dict" not in st.session_state:
     st.session_state.shares_dict = {t:0 for t in df["Ticker"]}
-    # VW Bestand initial
-    st.session_state.shares_dict["VOW3.DE"] = 5300 / get_price(df[df["Ticker"]=="VOW3.DE"].iloc[0])
+    # VW-Bestand initial 5300 € in Euro / Price
+    if not np.isnan(df.loc[df["Ticker"]=="VOW3.DE", "Price"].values[0]):
+        st.session_state.shares_dict["VOW3.DE"] = 5300 / df.loc[df["Ticker"]=="VOW3.DE", "Price"].values[0]
+    else:
+        st.session_state.shares_dict["VOW3.DE"] = 0
 
 # --- Editable DataFrame aus session_state erstellen ---
-if "editable_df" not in st.session_state:
-    st.session_state.editable_df = df.copy()
-    st.session_state.editable_df["Shares"] = st.session_state.editable_df["Ticker"].map(st.session_state.shares_dict)
+df["Shares"] = df["Ticker"].map(st.session_state.shares_dict)
 
 # --- DataEditor nur für Shares ---
 st.subheader("Depot Shares eingeben")
 edited = st.data_editor(
-    st.session_state.editable_df[["Ticker","Name","Shares"]],
+    df[["Ticker","Name","Shares"]],
     num_rows="dynamic",
     use_container_width=True
 )
 
-# --- Übernahme der manuellen Eingaben ---
+# --- Übernahme aller Eingaben sofort in session_state ---
 for idx, row in edited.iterrows():
     st.session_state.shares_dict[row["Ticker"]] = row["Shares"]
-    st.session_state.editable_df.at[idx, "Shares"] = row["Shares"]
+    df.at[idx, "Shares"] = row["Shares"]
 
 # --- Market Value berechnen ---
-st.session_state.editable_df["Price"] = df["Price"]
-st.session_state.editable_df["MarketValue"] = (st.session_state.editable_df["Shares"] * st.session_state.editable_df["Price"]).round(2)
-df = st.session_state.editable_df.copy()
+df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 
 # --- Gesamtwert ---
 total_value = df["MarketValue"].sum()
 st.write(f"Stand: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S (UTC)')} — Gesamtwert: {total_value:,.2f} €")
 
-# --- Umschichtungsvorschläge (optional nach Sparplan-Gewichten) ---
+# --- Umschichtungsvorschläge (nach Zielgewichten) ---
 target_weights = {
     "Tech":0.4,
     "Cybersecurity":0.1,
@@ -147,8 +138,6 @@ if sum(sizes) > 0:
     ax.pie(sizes, labels=labels, autopct=lambda p: f'{p:.1f}%' if p>0 else '')
     ax.axis('equal')
     st.pyplot(fig)
-else:
-    st.info("Keine Werte im Depot vorhanden, daher keine Grafik.")
 
 # --- Prozentuale Aktienanteile innerhalb der Sektoren ---
 st.subheader("Aktienanteile innerhalb der Sektoren")

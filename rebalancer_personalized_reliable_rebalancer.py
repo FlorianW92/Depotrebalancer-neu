@@ -9,14 +9,14 @@ from streamlit_autorefresh import st_autorefresh
 FRACTION_PRECISION = 3
 
 st.set_page_config(page_title="Personal Rebalancer Komplett XETRA", layout="wide")
-st.title("📊 Personal Rebalancer — Vollständig & Euro (XETRA für DE-Aktien)")
+st.title("📊 Personal Rebalancer — Vollständig & Euro (XETRA / USD→EUR)")
 
 # --- Sidebar Einstellungen ---
 st.sidebar.header("Einstellungen")
-refresh_interval = st.sidebar.slider("Automatische Kursaktualisierung (Minuten)", 1,30,5)
-st_autorefresh(interval=refresh_interval*60*1000, key="auto_refresh")
+refresh_interval = st.sidebar.slider("Automatische Kursaktualisierung (Minuten)", 1, 30, 5)
+st_autorefresh(interval=refresh_interval * 60 * 1000, key="auto_refresh")
 
-# --- Depot Definition (optimiertes Depot) ---
+# --- Depot Definition ---
 initial = [
     {"Ticker":"NVDA","Name":"NVIDIA","Sector":"Tech","MonthlyAlloc":75,"Currency":"USD"},
     {"Ticker":"MSFT","Name":"Microsoft","Sector":"Tech","MonthlyAlloc":50,"Currency":"USD"},
@@ -30,9 +30,9 @@ initial = [
     {"Ticker":"TSLA","Name":"Tesla","Sector":"Disruption","MonthlyAlloc":37.5,"Currency":"USD"},
     {"Ticker":"PLTR","Name":"Palantir","Sector":"Disruption","MonthlyAlloc":25,"Currency":"USD"},
     {"Ticker":"SMCI","Name":"Super Micro Computer","Sector":"Disruption","MonthlyAlloc":12.5,"Currency":"USD"},
-    {"Ticker":"JNJ","Name":"Johnson & Johnson","Sector":"Health","MonthlyAlloc":25,"Currency":"USD"},
+    {"Ticker":"JNJ","Name":"Johnson & Johnson","Sector":"Blue Chips","MonthlyAlloc":25,"Currency":"USD"},
     {"Ticker":"NVO","Name":"Novo Nordisk","Sector":"Health","MonthlyAlloc":25,"Currency":"USD"},
-    {"Ticker":"AAPL","Name":"Apple","Sector":"Consumer","MonthlyAlloc":25,"Currency":"USD"},
+    {"Ticker":"AAPL","Name":"Apple","Sector":"Blue Chips","MonthlyAlloc":25,"Currency":"USD"},
     {"Ticker":"VOW3.DE","Name":"Volkswagen","Sector":"Blue Chips","MonthlyAlloc":0,"Currency":"EUR"} 
 ]
 
@@ -74,7 +74,7 @@ if st.session_state.refresh or "Price" not in df.columns:
 if "shares_dict" not in st.session_state:
     st.session_state.shares_dict = {}
     for _, row in df.iterrows():
-        if row["Ticker"]=="VOW3.DE":
+        if row["Ticker"] == "VOW3.DE":
             st.session_state.shares_dict[row["Ticker"]] = 57.0
         else:
             st.session_state.shares_dict[row["Ticker"]] = np.nan
@@ -89,16 +89,17 @@ for _, row in df.iterrows():
         else:
             st.session_state.shares_dict[ticker] = 0.0
 
-df["Shares"] = df["Ticker"].map(st.session_state.shares_dict)
-df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
-
-# --- Editable Portfolio ---
-st.subheader("Depot bearbeiten")
+# --- DataFrame für Editor aus session_state ---
 editable_df = df.copy()
 editable_df["Shares"] = editable_df["Ticker"].map(st.session_state.shares_dict)
 
-editable = st.data_editor(editable_df[["Ticker","Name","Shares","Price","Sector","MonthlyAlloc"]],
-                          num_rows="dynamic", use_container_width=True)
+# --- Editable DataEditor ---
+st.subheader("Depot bearbeiten")
+editable = st.data_editor(
+    editable_df[["Ticker","Name","Shares","Price","Sector","MonthlyAlloc"]],
+    num_rows="dynamic",
+    use_container_width=True
+)
 
 # --- Sofortige Übernahme der neuen Shares ---
 for _, row in editable.iterrows():
@@ -112,7 +113,10 @@ total_value = df["MarketValue"].sum()
 st.write(f"Stand: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S (UTC)')} — Gesamtwert: {total_value:,.2f} €")
 
 # --- Umschichtungsvorschläge ---
-target_weights = {"Tech":0.40,"Cyber":0.10,"Renewable":0.20,"Disruption":0.15,"Health":0.10,"Consumer":0.05,"Blue Chips":0.0}
+target_weights = {
+    "Tech":0.40, "Cyber":0.10, "Renewable":0.20, "Disruption":0.15,
+    "Health":0.10, "Consumer":0.05, "Blue Chips":0.0
+}
 sector_values = df.groupby("Sector")["MarketValue"].sum().to_dict()
 sector_weights = {s:(sector_values.get(s,0)/total_value if total_value>0 else 0) for s in target_weights.keys()}
 

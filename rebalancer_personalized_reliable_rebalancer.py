@@ -8,8 +8,8 @@ from streamlit_autorefresh import st_autorefresh
 
 FRACTION_PRECISION = 3
 
-st.set_page_config(page_title="Personal Rebalancer Komplett", layout="wide")
-st.title("📊 Personal Rebalancer — Vollständig & Stabil (Euro)")
+st.set_page_config(page_title="Personal Rebalancer Komplett XETRA", layout="wide")
+st.title("📊 Personal Rebalancer — Vollständig & Euro (XETRA für DE-Aktien)")
 
 # --- Sidebar Einstellungen ---
 st.sidebar.header("Einstellungen")
@@ -33,7 +33,7 @@ initial = [
     {"Ticker":"JNJ","Name":"Johnson & Johnson","Sector":"Health","MonthlyAlloc":25,"Currency":"USD"},
     {"Ticker":"NVO","Name":"Novo Nordisk","Sector":"Health","MonthlyAlloc":25,"Currency":"USD"},
     {"Ticker":"AAPL","Name":"Apple","Sector":"Consumer","MonthlyAlloc":25,"Currency":"USD"},
-    {"Ticker":"VOW3.DE","Name":"Volkswagen (VOW3)","Sector":"Blue Chips","MonthlyAlloc":0,"Currency":"EUR"}
+    {"Ticker":"VOW3.DE","Name":"Volkswagen","Sector":"Blue Chips","MonthlyAlloc":0,"Currency":"EUR"} # XETRA
 ]
 
 df = pd.DataFrame(initial)
@@ -48,9 +48,9 @@ if st.button("Kurse jetzt aktualisieren"):
 try:
     eurusd = yf.Ticker("EURUSD=X").history(period="1d", interval="1m")['Close'][-1]
 except:
-    eurusd = 1.0  # fallback falls Abfrage fehlschlägt
+    eurusd = 1.0
 
-# --- Preisabruf in Euro ---
+# --- Preisabruf in Euro (USD → EUR, DE → XETRA) ---
 def get_price(row):
     t = row["Ticker"]
     try:
@@ -63,28 +63,30 @@ def get_price(row):
                 hist = ticker.history(period="1d")
                 price_usd = float(hist['Close'][-1])
             return price_usd / eurusd
-        else:
+        else:  # EUR / XETRA
             hist = ticker.history(period="1d")
             return float(hist['Close'][-1])
     except:
         return np.nan
 
+# --- Kursaktualisierung nur Preis, Shares bleiben unverändert ---
 if st.session_state.refresh or "Price" not in df.columns:
-    prices = [get_price(row) for _, row in df.iterrows()]
-    df["Price"] = prices
+    for i, row in df.iterrows():
+        df.at[i, "Price"] = get_price(row)
     st.session_state.refresh = False
 
-# --- Berechnung Shares & MarketValue ---
-def derive_shares(row):
-    if row["Ticker"]=="VOW3.DE":
-        return 57.0
-    p = row["Price"]
-    if pd.notna(p) and p>0 and row["MonthlyAlloc"]>0:
-        invested = row["MonthlyAlloc"] * 12
-        return round(invested / p, FRACTION_PRECISION)
-    return 0.0
+# --- Initial Shares Berechnung (nur bei leerem Wert) ---
+for i, row in df.iterrows():
+    if pd.isna(row.get("Shares")) or row["Shares"]==0:
+        if row["Ticker"]=="VOW3.DE":
+            df.at[i, "Shares"] = 57.0
+        else:
+            p = row["Price"]
+            if pd.notna(p) and p>0 and row["MonthlyAlloc"]>0:
+                invested = row["MonthlyAlloc"] * 12
+                df.at[i, "Shares"] = round(invested / p, FRACTION_PRECISION)
 
-df["Shares"] = df.apply(derive_shares, axis=1)
+# --- MarketValue nach Shares x Price ---
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 
 # --- Editable Portfolio ---
@@ -92,12 +94,17 @@ st.subheader("Depot bearbeiten")
 editable = st.data_editor(df[["Ticker","Name","Shares","Price","Sector","MonthlyAlloc","MarketValue"]],
                           num_rows="dynamic", use_container_width=True)
 
-total_value = editable["MarketValue"].sum()
+# Nachbearbeitung: aktualisiere df aus editable
+for i, row in editable.iterrows():
+    df.at[i, "Shares"] = row["Shares"]
+    df.at[i, "MarketValue"] = round(row["Shares"] * row["Price"],2)
+
+total_value = df["MarketValue"].sum()
 st.write(f"Stand: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S (UTC)')} — Gesamtwert: {total_value:,.2f} €")
 
 # --- Automatische Umschichtungsvorschläge ---
 target_weights = {"Tech":0.40,"Cyber":0.10,"Renewable":0.20,"Disruption":0.15,"Health":0.10,"Consumer":0.05,"Blue Chips":0.0}
-sector_values = editable.groupby("Sector")["MarketValue"].sum().to_dict()
+sector_values = df.groupby("Sector")["MarketValue"].sum().to_dict()
 sector_weights = {s:(sector_values.get(s,0)/total_value if total_value>0 else 0) for s in target_weights.keys()}
 
 st.subheader("Umschichtungsvorschläge")
@@ -117,7 +124,7 @@ if suggestions:
 else:
     st.success("Keine Umschichtungen nötig")
 
-# --- Sektorverteilung ---
+# --- Sektorverteilung Pie-Chart ---
 st.subheader("Sektorverteilung")
 labels = list(target_weights.keys())
 sizes = [sector_weights.get(s,0) for s in labels]

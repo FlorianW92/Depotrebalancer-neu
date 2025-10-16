@@ -106,12 +106,12 @@ def is_trading_day(date):
     return date.weekday() < 5 and date not in DE_HOLIDAYS
 
 # --- Sparplan automatisch ab 6.11.2025 ---
-today = pd.Timestamp(datetime.now(timezone('Europe/Berlin')).date())
-plan_day = pd.Timestamp(2025, 11, 6, tz=timezone('Europe/Berlin'))
+today = pd.Timestamp(datetime.now(timezone('Europe/Berlin')).date()).tz_localize(None)
+plan_day = pd.Timestamp(2025, 11, 6)  # tz-naiv
 while not is_trading_day(plan_day):
     plan_day += pd.Timedelta(days=1)
 
-if today >= plan_day.date():
+if today >= plan_day:
     for idx, row in df.iterrows():
         ticker = row["Ticker"]
         if ticker=="VOW3.DE":

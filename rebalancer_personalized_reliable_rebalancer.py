@@ -57,11 +57,7 @@ def get_price(row):
         ticker = yf.Ticker(t)
         if row["Currency"]=="USD":
             hist = ticker.history(period="1d", interval="1m")
-            if len(hist) > 0:
-                price_usd = float(hist['Close'][-1])
-            else:
-                hist = ticker.history(period="1d")
-                price_usd = float(hist['Close'][-1])
+            price_usd = float(hist['Close'][-1]) if len(hist)>0 else float(ticker.history(period="1d")['Close'][-1])
             return price_usd / eurusd
         else:  # EUR / XETRA
             hist = ticker.history(period="1d")
@@ -82,8 +78,8 @@ if "SharesInitialized" not in st.session_state:
         if row["Ticker"]=="VOW3.DE":
             shares_list.append(57.0)
         else:
-            p = row["Price"]
-            if pd.notna(p) and p>0 and row["MonthlyAlloc"]>0:
+            p = row.get("Price", np.nan)
+            if pd.notna(p) and p>0 and row.get("MonthlyAlloc",0)>0:
                 shares_list.append(round(row["MonthlyAlloc"]*12 / p, FRACTION_PRECISION))
             else:
                 shares_list.append(0.0)
@@ -103,7 +99,7 @@ for i, row in editable.iterrows():
     df.at[i, "Shares"] = row["Shares"]
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 
-# --- Gesamtwert anzeigen ---
+# --- Gesamtwert ---
 total_value = df["MarketValue"].sum()
 st.write(f"Stand: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S (UTC)')} — Gesamtwert: {total_value:,.2f} €")
 
@@ -140,3 +136,15 @@ if sum(sizes) > 0:
     st.pyplot(fig)
 else:
     st.info("Keine Werte im Depot vorhanden, daher keine Grafik.")
+
+# --- Prozentuale Darstellung der Aktien innerhalb jedes Sektors ---
+st.subheader("Aktienanteile innerhalb der Sektoren")
+sector_groups = df.groupby("Sector")
+for sector, group in sector_groups:
+    sector_total = group["MarketValue"].sum()
+    if sector_total > 0:
+        st.write(f"**{sector}** (Gesamt: {sector_total:,.2f} €)")
+        temp = group.copy()
+        temp["PercentOfSector"] = (temp["MarketValue"]/sector_total*100).round(2)
+        st.dataframe(temp[["Ticker","Name","Shares","Price","MarketValue","PercentOfSector"]])
+

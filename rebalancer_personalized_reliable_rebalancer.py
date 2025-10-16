@@ -45,21 +45,33 @@ if "refresh" not in st.session_state:
 if st.button("Kurse jetzt aktualisieren"):
     st.session_state.refresh = True
 
-# --- Preisabruf ---
+# --- Preisabruf mit stabiler Methode ---
 def get_price(row):
     t = row["Ticker"]
     try:
         ticker = yf.Ticker(t)
         if row["Currency"]=="USD":
-            return ticker.fast_info.get('last_price', np.nan)
+            # Letzte Minute des heutigen Tages
+            hist = ticker.history(period="1d", interval="1m")
+            if len(hist) > 0:
+                return float(hist['Close'][-1])
+            else:
+                # Fallback Tageskurs
+                hist = ticker.history(period="1d")
+                return float(hist['Close'][-1])
         else:
+            # DE-Ticker Tageskurs
             hist = ticker.history(period="1d")
             return float(hist['Close'][-1])
     except:
         return np.nan
 
+# --- Kursaktualisierung nur wenn nötig ---
 if st.session_state.refresh or "Price" not in df.columns:
-    df["Price"] = df.apply(get_price, axis=1)
+    prices = []
+    for _, row in df.iterrows():
+        prices.append(get_price(row))
+    df["Price"] = prices
     st.session_state.refresh = False
 
 # --- Shares und MarketValue ---

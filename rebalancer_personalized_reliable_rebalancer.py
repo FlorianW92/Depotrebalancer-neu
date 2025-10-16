@@ -98,33 +98,32 @@ weights_within_sector = {
     "JNJ":0.5, "NVO":0.5,
     "AAPL":0.5
 }
-# VW nicht im Sparplan!
+# VW nicht im Sparplan
 monthly_plan = {"Tech":200,"Cybersecurity":50,"Renewable":125,"Disruption":100,"Health":50,"Consumer":75}
 
 # --- Prüfen ob Börsentag ---
 def is_trading_day(date):
     return date.weekday() < 5 and date not in DE_HOLIDAYS
 
-# --- Sparplan Button ---
-st.subheader("Sparplan ausführen")
+# --- Sparplan automatisch ausführen ---
 today = pd.Timestamp(datetime.today().date())
-if st.button("Sparplan ausführen"):
-    plan_day = pd.Timestamp(today.year, today.month, 6)
-    if not is_trading_day(plan_day):
-        while not is_trading_day(plan_day):
-            plan_day += pd.Timedelta(days=1)
-    if today >= plan_day:
-        for idx, row in df.iterrows():
-            ticker = row["Ticker"]
-            if ticker=="VOW3.DE":
-                continue  # VW nicht im Sparplan
-            sector = row["Sector"]
-            price = row["Price"]
-            sector_plan = monthly_plan.get(sector,0)
-            weight = weights_within_sector.get(ticker,1.0)
-            additional_shares = (sector_plan * weight) / price if price>0 else 0
-            df.at[idx,"Shares"] = st.session_state.shares_dict.get(ticker,0) + additional_shares
-            st.session_state.shares_dict[ticker] = df.at[idx,"Shares"]
+plan_day = pd.Timestamp(today.year, today.month, 6)
+while not is_trading_day(plan_day):
+    plan_day += pd.Timedelta(days=1)
+
+if today >= plan_day:
+    for idx, row in df.iterrows():
+        ticker = row["Ticker"]
+        if ticker=="VOW3.DE":
+            continue  # VW nicht im Sparplan
+        sector = row["Sector"]
+        price = row["Price"]
+        sector_plan = monthly_plan.get(sector,0)
+        weight = weights_within_sector.get(ticker,1.0)
+        additional_shares = (sector_plan * weight) / price if price>0 else 0
+        df.at[idx,"Shares"] = st.session_state.shares_dict.get(ticker,0) + additional_shares
+        st.session_state.shares_dict[ticker] = df.at[idx,"Shares"]
+    st.success(f"Sparplan automatisch für den {plan_day.date()} ausgeführt ✅")
 
 # --- Market Value ---
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)

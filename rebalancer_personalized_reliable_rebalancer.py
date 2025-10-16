@@ -5,8 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="Optimiertes Musterdepot", layout="wide")
-st.title("💼 Optimiertes Musterdepot – Stabile Version ohne externe Kalender")
+st.set_page_config(page_title="Persönliches Musterdepot", layout="wide")
+st.title("💼 Persönliches Optimiertes Musterdepot")
 
 # --- Sidebar ---
 st.sidebar.header("Einstellungen")
@@ -96,8 +96,9 @@ weights_within_sector = {
     "FSLR":0.4, "NEE":0.4, "BEPC":0.2,
     "TSLA":0.5, "PLTR":0.25, "SMCI":0.25,
     "JNJ":0.5, "NVO":0.5,
-    "AAPL":0.5, "VOW3.DE":0.5
+    "AAPL":0.5
 }
+# VW nicht im Sparplan!
 monthly_plan = {"Tech":200,"Cybersecurity":50,"Renewable":125,"Disruption":100,"Health":50,"Consumer":75}
 
 # --- Prüfen ob Börsentag ---
@@ -110,13 +111,14 @@ today = pd.Timestamp(datetime.today().date())
 if st.button("Sparplan ausführen"):
     plan_day = pd.Timestamp(today.year, today.month, 6)
     if not is_trading_day(plan_day):
-        # nächster Börsentag
         while not is_trading_day(plan_day):
             plan_day += pd.Timedelta(days=1)
     if today >= plan_day:
         for idx, row in df.iterrows():
-            sector = row["Sector"]
             ticker = row["Ticker"]
+            if ticker=="VOW3.DE":
+                continue  # VW nicht im Sparplan
+            sector = row["Sector"]
             price = row["Price"]
             sector_plan = monthly_plan.get(sector,0)
             weight = weights_within_sector.get(ticker,1.0)

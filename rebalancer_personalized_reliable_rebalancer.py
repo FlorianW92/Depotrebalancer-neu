@@ -8,32 +8,33 @@ from streamlit_autorefresh import st_autorefresh
 
 FRACTION_PRECISION = 3
 
-st.set_page_config(page_title="Personal Rebalancer Komplett XETRA", layout="wide")
-st.title("📊 Personal Rebalancer — Vollständig & Euro (XETRA / USD→EUR)")
+st.set_page_config(page_title="Personal Rebalancer Sparplan", layout="wide")
+st.title("📊 Personal Rebalancer — Sparplan & Euro")
 
 # --- Sidebar Einstellungen ---
 st.sidebar.header("Einstellungen")
 refresh_interval = st.sidebar.slider("Automatische Kursaktualisierung (Minuten)", 1, 30, 5)
 st_autorefresh(interval=refresh_interval * 60 * 1000, key="auto_refresh")
 
-# --- Depot Definition ---
+# --- Depot Definition nach deinem Sparplan ---
 initial = [
-    {"Ticker":"NVDA","Name":"NVIDIA","Sector":"Tech","MonthlyAlloc":75,"Currency":"USD"},
-    {"Ticker":"MSFT","Name":"Microsoft","Sector":"Tech","MonthlyAlloc":50,"Currency":"USD"},
-    {"Ticker":"GOOGL","Name":"Alphabet","Sector":"Tech","MonthlyAlloc":50,"Currency":"USD"},
-    {"Ticker":"ASML","Name":"ASML","Sector":"Tech","MonthlyAlloc":25,"Currency":"USD"},
-    {"Ticker":"CRWD","Name":"CrowdStrike","Sector":"Cyber","MonthlyAlloc":25,"Currency":"USD"},
-    {"Ticker":"NOW","Name":"ServiceNow","Sector":"Cyber","MonthlyAlloc":25,"Currency":"USD"},
+    # Technologie & KI
+    {"Ticker":"NVDA","Name":"NVIDIA","Sector":"Tech","MonthlyAlloc":80,"Currency":"USD"},
+    {"Ticker":"GOOGL","Name":"Alphabet","Sector":"Tech","MonthlyAlloc":60,"Currency":"USD"},
+    {"Ticker":"MSFT","Name":"Microsoft","Sector":"Tech","MonthlyAlloc":60,"Currency":"USD"},
+    # Erneuerbare Energien & Infrastruktur
+    {"Ticker":"NEE","Name":"NextEra Energy","Sector":"Renewable","MonthlyAlloc":50,"Currency":"USD"},
     {"Ticker":"FSLR","Name":"First Solar","Sector":"Renewable","MonthlyAlloc":50,"Currency":"USD"},
-    {"Ticker":"NEE","Name":"NextEra Energy","Sector":"Renewable","MonthlyAlloc":25,"Currency":"USD"},
-    {"Ticker":"BEPC","Name":"Brookfield Renewable","Sector":"Renewable","MonthlyAlloc":25,"Currency":"USD"},
-    {"Ticker":"TSLA","Name":"Tesla","Sector":"Disruption","MonthlyAlloc":37.5,"Currency":"USD"},
+    {"Ticker":"ORSTED.CO","Name":"Ørsted","Sector":"Renewable","MonthlyAlloc":25,"Currency":"EUR"},
+    # Zukunftstechnologien / Disruption
+    {"Ticker":"TSLA","Name":"Tesla","Sector":"Disruption","MonthlyAlloc":50,"Currency":"USD"},
+    {"Ticker":"PLUG","Name":"Plug Power","Sector":"Disruption","MonthlyAlloc":25,"Currency":"USD"},
     {"Ticker":"PLTR","Name":"Palantir","Sector":"Disruption","MonthlyAlloc":25,"Currency":"USD"},
-    {"Ticker":"SMCI","Name":"Super Micro Computer","Sector":"Disruption","MonthlyAlloc":12.5,"Currency":"USD"},
+    # Blue Chips
+    {"Ticker":"AAPL","Name":"Apple","Sector":"Blue Chips","MonthlyAlloc":50,"Currency":"USD"},
     {"Ticker":"JNJ","Name":"Johnson & Johnson","Sector":"Blue Chips","MonthlyAlloc":25,"Currency":"USD"},
-    {"Ticker":"NVO","Name":"Novo Nordisk","Sector":"Health","MonthlyAlloc":25,"Currency":"USD"},
-    {"Ticker":"AAPL","Name":"Apple","Sector":"Blue Chips","MonthlyAlloc":25,"Currency":"USD"},
-    {"Ticker":"VOW3.DE","Name":"Volkswagen","Sector":"Blue Chips","MonthlyAlloc":0,"Currency":"EUR"} 
+    # VW-Bestand als Teil der Blue Chips
+    {"Ticker":"VOW3.DE","Name":"Volkswagen","Sector":"Blue Chips","MonthlyAlloc":0,"Currency":"EUR"}
 ]
 
 df = pd.DataFrame(initial)
@@ -74,7 +75,7 @@ if st.session_state.refresh or "Price" not in df.columns:
 if "shares_dict" not in st.session_state:
     st.session_state.shares_dict = {}
     for _, row in df.iterrows():
-        if row["Ticker"] == "VOW3.DE":
+        if row["Ticker"]=="VOW3.DE":
             st.session_state.shares_dict[row["Ticker"]] = 57.0
         else:
             st.session_state.shares_dict[row["Ticker"]] = np.nan
@@ -114,8 +115,10 @@ st.write(f"Stand: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S (UTC)')} — Ge
 
 # --- Umschichtungsvorschläge ---
 target_weights = {
-    "Tech":0.40, "Cyber":0.10, "Renewable":0.20, "Disruption":0.15,
-    "Health":0.10, "Consumer":0.05, "Blue Chips":0.0
+    "Tech":200/500,
+    "Renewable":125/500,
+    "Disruption":100/500,
+    "Blue Chips":75/500,
 }
 sector_values = df.groupby("Sector")["MarketValue"].sum().to_dict()
 sector_weights = {s:(sector_values.get(s,0)/total_value if total_value>0 else 0) for s in target_weights.keys()}
@@ -159,4 +162,3 @@ for sector, group in sector_groups:
         temp = group.copy()
         temp["PercentOfSector"] = (temp["MarketValue"]/sector_total*100).round(2)
         st.dataframe(temp[["Ticker","Name","Shares","Price","MarketValue","PercentOfSector"]])
-

@@ -67,19 +67,22 @@ def get_price(row):
 
 # --- Kursaktualisierung nur Preis, Shares bleiben unverändert ---
 if st.session_state.refresh or "Price" not in df.columns:
-    for i, row in df.iterrows():
-        df.at[i, "Price"] = get_price(row)
+    df["Price"] = df.apply(get_price, axis=1)
     st.session_state.refresh = False
 
-# --- Initial Shares Berechnung (nur einmal, persistent) ---
+# --- Sicherstellen, dass Shares-Spalte existiert ---
+if "Shares" not in df.columns:
+    df["Shares"] = 0.0
+
+# --- Initial Shares Berechnung (nur einmal) ---
 if "SharesInitialized" not in st.session_state:
     shares_list = []
     for i, row in df.iterrows():
         if row["Ticker"]=="VOW3.DE":
             shares_list.append(57.0)
         else:
-            p = row.get("Price", np.nan)
-            if pd.notna(p) and p>0 and row.get("MonthlyAlloc",0)>0:
+            p = row.get("Price", 0)
+            if p > 0 and row.get("MonthlyAlloc",0) > 0:
                 shares_list.append(round(row["MonthlyAlloc"]*12 / p, FRACTION_PRECISION))
             else:
                 shares_list.append(0.0)

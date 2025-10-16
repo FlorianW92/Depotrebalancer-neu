@@ -33,7 +33,7 @@ initial = [
     # Blue Chips
     {"Ticker":"AAPL","Name":"Apple","Sector":"Blue Chips","MonthlyAlloc":50,"Currency":"USD"},
     {"Ticker":"JNJ","Name":"Johnson & Johnson","Sector":"Blue Chips","MonthlyAlloc":25,"Currency":"USD"},
-    # VW-Bestand als Teil der Blue Chips
+    # VW-Bestand
     {"Ticker":"VOW3.DE","Name":"Volkswagen","Sector":"Blue Chips","MonthlyAlloc":0,"Currency":"EUR"}
 ]
 
@@ -74,21 +74,18 @@ if st.session_state.refresh or "Price" not in df.columns:
 # --- Persistent Shares ---
 if "shares_dict" not in st.session_state:
     st.session_state.shares_dict = {}
-    for _, row in df.iterrows():
-        if row["Ticker"]=="VOW3.DE":
-            st.session_state.shares_dict[row["Ticker"]] = 57.0
-        else:
-            st.session_state.shares_dict[row["Ticker"]] = np.nan
 
-# --- Initialisierung nur für NaN-Shares ---
 for _, row in df.iterrows():
     ticker = row["Ticker"]
-    if pd.isna(st.session_state.shares_dict[ticker]):
-        p = row.get("Price", 0)
-        if p > 0 and row.get("MonthlyAlloc", 0) > 0:
-            st.session_state.shares_dict[ticker] = round(row["MonthlyAlloc"]*12 / p, FRACTION_PRECISION)
+    if ticker not in st.session_state.shares_dict or pd.isna(st.session_state.shares_dict[ticker]):
+        if ticker=="VOW3.DE":
+            st.session_state.shares_dict[ticker] = 57.0
         else:
-            st.session_state.shares_dict[ticker] = 0.0
+            p = row.get("Price", 0)
+            if p > 0 and row.get("MonthlyAlloc", 0) > 0:
+                st.session_state.shares_dict[ticker] = round(row["MonthlyAlloc"]*12 / p, FRACTION_PRECISION)
+            else:
+                st.session_state.shares_dict[ticker] = 0.0
 
 # --- DataFrame für Editor aus session_state ---
 editable_df = df.copy()

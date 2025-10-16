@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import yfinance as yf
@@ -9,8 +8,8 @@ from streamlit_autorefresh import st_autorefresh
 
 FRACTION_PRECISION = 3
 
-st.set_page_config(page_title="Personal Rebalancer Verlässlich", layout="wide")
-st.title("📊 Personal Rebalancer — Verlässliche Kurse & Umschichtung")
+st.set_page_config(page_title="Personal Rebalancer Stabil", layout="wide")
+st.title("📊 Personal Rebalancer — Stabil & Zuverlässig")
 
 # --- Sidebar Einstellungen ---
 st.sidebar.header("Einstellungen")
@@ -39,9 +38,12 @@ initial = [
 
 df = pd.DataFrame(initial)
 
-# --- Aktualisierungsbutton ---
+# --- Button Update ohne st.experimental_rerun direkt ---
+if "refresh" not in st.session_state:
+    st.session_state.refresh = False
+
 if st.button("Kurse jetzt aktualisieren"):
-    st.experimental_rerun()
+    st.session_state.refresh = True
 
 # --- Preisabruf ---
 def get_price(row):
@@ -49,17 +51,18 @@ def get_price(row):
     try:
         ticker = yf.Ticker(t)
         if row["Currency"]=="USD":
-            info = ticker.fast_info
-            return info.get('last_price', np.nan)
-        else:  # DE-Ticker -> Tageskurs Close
+            return ticker.fast_info.get('last_price', np.nan)
+        else:
             hist = ticker.history(period="1d")
             return float(hist['Close'][-1])
     except:
         return np.nan
 
-df["Price"] = df.apply(get_price, axis=1)
+if st.session_state.refresh or "Price" not in df.columns:
+    df["Price"] = df.apply(get_price, axis=1)
+    st.session_state.refresh = False
 
-# --- Shares berechnen ---
+# --- Shares und MarketValue ---
 def derive_shares(row):
     if row["Ticker"]=="VOW3.DE":
         return 57.0
@@ -85,13 +88,12 @@ sector_values = editable.groupby("Sector")["MarketValue"].sum().to_dict()
 sector_weights = {s:(sector_values.get(s,0)/total_value if total_value>0 else 0) for s in target_weights.keys()}
 
 st.subheader("Umschichtungsvorschläge")
-threshold = 0.05  # 5% Abweichung
+threshold = 0.05
 suggestions = []
 for sector, target in target_weights.items():
     current = sector_weights.get(sector,0)
     diff = current - target
     if diff > threshold:
-        # Verkaufsempfehlung: welcher Betrag in diesem Sektor
         suggestions.append(f"{sector} übergewichtet → Teilverkauf empfohlen ({diff*100:.1f}% über Zielgewicht)")
     elif diff < -threshold:
         suggestions.append(f"{sector} untergewichtet → Aufstockung empfohlen ({-diff*100:.1f}% unter Zielgewicht)")

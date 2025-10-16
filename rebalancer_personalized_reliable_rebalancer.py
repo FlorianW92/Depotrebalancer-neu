@@ -155,3 +155,4 @@ for sector, group in sector_groups:
         temp = group.copy()
         temp["PercentOfSector"] = (temp["MarketValue"]/sector_total*100).round(2)
         st.dataframe(temp[["Ticker","Name","Shares","Price","MarketValue","PercentOfSector"]])
+

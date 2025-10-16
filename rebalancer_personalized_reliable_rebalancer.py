@@ -3,17 +3,23 @@ import pandas as pd
 import yfinance as yf
 import numpy as np
 import matplotlib.pyplot as plt
-from datetime import datetime
-import pandas_market_calendars as mcal
+from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Optimiertes Musterdepot", layout="wide")
-st.title("💼 Optimiertes Musterdepot – Stabile Version")
+st.title("💼 Optimiertes Musterdepot – Stabile Version ohne externe Kalender")
 
-# --- Einstellungen ---
+# --- Sidebar ---
 st.sidebar.header("Einstellungen")
 refresh_interval = st.sidebar.slider("Automatische Kursaktualisierung (Minuten)", 1, 30, 5)
 if st.sidebar.button("Kurse jetzt aktualisieren"):
     st.session_state.refresh = True
+
+# --- Deutsche Feiertage (2025) ---
+DE_HOLIDAYS = [
+    "2025-01-01","2025-04-18","2025-04-21","2025-05-01","2025-05-29",
+    "2025-06-09","2025-10-03","2025-12-25","2025-12-26"
+]
+DE_HOLIDAYS = [pd.Timestamp(d) for d in DE_HOLIDAYS]
 
 # --- Depotdefinition ---
 data = [
@@ -36,7 +42,7 @@ data = [
 ]
 df = pd.DataFrame(data)
 
-# --- Wechselkurs USD → EUR ---
+# --- USD → EUR Wechselkurs ---
 try:
     eurusd = yf.Ticker("EURUSD=X").history(period="1d")['Close'][-1]
 except:
@@ -63,12 +69,13 @@ if st.session_state.refresh or "Price" not in df.columns:
     df["Price"] = df.apply(get_price, axis=1)
     st.session_state.refresh = False
 
-# --- Shares persistent ---
+# --- Persistent Shares ---
 if "shares_dict" not in st.session_state:
     st.session_state.shares_dict = {t:0 for t in df["Ticker"]}
     # VW-Bestand initial
     if not np.isnan(df.loc[df["Ticker"]=="VOW3.DE", "Price"].values[0]):
         st.session_state.shares_dict["VOW3.DE"] = 5300 / df.loc[df["Ticker"]=="VOW3.DE", "Price"].values[0]
+
 df["Shares"] = df["Ticker"].map(st.session_state.shares_dict)
 
 # --- Editable Shares ---
@@ -78,12 +85,11 @@ edited = st.data_editor(
     num_rows="dynamic",
     use_container_width=True
 )
-# Übernahme der Änderungen
 for idx, row in edited.iterrows():
     st.session_state.shares_dict[row["Ticker"]] = row["Shares"]
     df.at[idx,"Shares"] = row["Shares"]
 
-# --- Sparplan Einstellungen ---
+# --- Sparplan Definition ---
 weights_within_sector = {
     "NVDA":0.375, "MSFT":0.25, "GOOGL":0.25, "ASML.AS":0.125,
     "CRWD":0.5, "NOW":0.5,
@@ -94,33 +100,36 @@ weights_within_sector = {
 }
 monthly_plan = {"Tech":200,"Cybersecurity":50,"Renewable":125,"Disruption":100,"Health":50,"Consumer":75}
 
-# Handelskalender
-xetra = mcal.get_calendar('XETR')
-today = pd.Timestamp(datetime.today().date())
+# --- Prüfen ob Börsentag ---
+def is_trading_day(date):
+    return date.weekday() < 5 and date not in DE_HOLIDAYS
 
+# --- Sparplan Button ---
 st.subheader("Sparplan ausführen")
+today = pd.Timestamp(datetime.today().date())
 if st.button("Sparplan ausführen"):
-    month_start = pd.Timestamp(today.year, today.month, 6)
-    valid_days = xetra.valid_days(start_date=month_start, end_date=month_start + pd.DateOffset(days=7))
-    if len(valid_days) > 0:
-        plan_day = valid_days[0]
-        if today >= plan_day:
-            for idx, row in df.iterrows():
-                sector = row["Sector"]
-                ticker = row["Ticker"]
-                price = row["Price"]
-                sector_plan = monthly_plan.get(sector,0)
-                weight = weights_within_sector.get(ticker,1.0)
-                additional_shares = (sector_plan * weight) / price if price>0 else 0
-                df.at[idx,"Shares"] = st.session_state.shares_dict.get(ticker,0) + additional_shares
-                st.session_state.shares_dict[ticker] = df.at[idx,"Shares"]
+    plan_day = pd.Timestamp(today.year, today.month, 6)
+    if not is_trading_day(plan_day):
+        # nächster Börsentag
+        while not is_trading_day(plan_day):
+            plan_day += pd.Timedelta(days=1)
+    if today >= plan_day:
+        for idx, row in df.iterrows():
+            sector = row["Sector"]
+            ticker = row["Ticker"]
+            price = row["Price"]
+            sector_plan = monthly_plan.get(sector,0)
+            weight = weights_within_sector.get(ticker,1.0)
+            additional_shares = (sector_plan * weight) / price if price>0 else 0
+            df.at[idx,"Shares"] = st.session_state.shares_dict.get(ticker,0) + additional_shares
+            st.session_state.shares_dict[ticker] = df.at[idx,"Shares"]
 
 # --- Market Value ---
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 total_value = df["MarketValue"].sum()
 st.write(f"Stand: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S (UTC)')} — Gesamtwert: {total_value:,.2f} €")
 
-# Umschichtung
+# --- Umschichtungsvorschläge ---
 target_weights = {"Tech":0.4,"Cybersecurity":0.1,"Renewable":0.2,"Disruption":0.15,"Health":0.1,"Consumer":0.05}
 sector_values = df.groupby("Sector")["MarketValue"].sum().to_dict()
 sector_weights = {s:(sector_values.get(s,0)/total_value if total_value>0 else 0) for s in target_weights.keys()}
@@ -140,7 +149,7 @@ if suggestions:
 else:
     st.success("Keine Umschichtungen nötig")
 
-# Pie-Chart Sektorverteilung
+# --- Pie-Chart Sektorverteilung ---
 st.subheader("Sektorverteilung")
 labels = list(target_weights.keys())
 sizes = [sector_weights.get(s,0) for s in labels]
@@ -150,7 +159,7 @@ if sum(sizes)>0:
     ax.axis('equal')
     st.pyplot(fig)
 
-# Prozentuale Anteile innerhalb Sektoren
+# --- Prozentuale Anteile innerhalb der Sektoren ---
 st.subheader("Aktienanteile innerhalb der Sektoren")
 for sector, group in df.groupby("Sector"):
     sector_total = group["MarketValue"].sum()

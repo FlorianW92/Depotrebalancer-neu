@@ -16,7 +16,7 @@ st.sidebar.header("Einstellungen")
 refresh_interval = st.sidebar.slider("Automatische Kursaktualisierung (Minuten)", 1,30,5)
 st_autorefresh(interval=refresh_interval*60*1000, key="auto_refresh")
 
-# --- Depot Definition ---
+# --- Depot Definition (optimiertes Depot) ---
 initial = [
     {"Ticker":"NVDA","Name":"NVIDIA","Sector":"Tech","MonthlyAlloc":75,"Currency":"USD"},
     {"Ticker":"MSFT","Name":"Microsoft","Sector":"Tech","MonthlyAlloc":50,"Currency":"USD"},
@@ -33,7 +33,7 @@ initial = [
     {"Ticker":"JNJ","Name":"Johnson & Johnson","Sector":"Health","MonthlyAlloc":25,"Currency":"USD"},
     {"Ticker":"NVO","Name":"Novo Nordisk","Sector":"Health","MonthlyAlloc":25,"Currency":"USD"},
     {"Ticker":"AAPL","Name":"Apple","Sector":"Consumer","MonthlyAlloc":25,"Currency":"USD"},
-    {"Ticker":"VOW3.DE","Name":"Volkswagen","Sector":"Blue Chips","MonthlyAlloc":0,"Currency":"EUR"} # XETRA
+    {"Ticker":"VOW3.DE","Name":"Volkswagen","Sector":"Blue Chips","MonthlyAlloc":0,"Currency":"EUR"} 
 ]
 
 df = pd.DataFrame(initial)
@@ -50,7 +50,7 @@ try:
 except:
     eurusd = 1.0
 
-# --- Preisabruf in Euro (USD → EUR, DE → XETRA) ---
+# --- Preisabruf in Euro ---
 def get_price(row):
     t = row["Ticker"]
     try:
@@ -59,51 +59,51 @@ def get_price(row):
             hist = ticker.history(period="1d", interval="1m")
             price_usd = float(hist['Close'][-1]) if len(hist)>0 else float(ticker.history(period="1d")['Close'][-1])
             return price_usd / eurusd
-        else:  # EUR / XETRA
+        else:
             hist = ticker.history(period="1d")
             return float(hist['Close'][-1])
     except:
         return np.nan
 
-# --- Kursaktualisierung nur Preis, Shares persistent ---
+# --- Kursaktualisierung ---
 if st.session_state.refresh or "Price" not in df.columns:
     df["Price"] = df.apply(get_price, axis=1)
     st.session_state.refresh = False
 
-# --- Persistent Shares in session_state ---
+# --- Persistent Shares ---
 if "shares_dict" not in st.session_state:
     st.session_state.shares_dict = {}
-    for i, row in df.iterrows():
+    for _, row in df.iterrows():
         if row["Ticker"]=="VOW3.DE":
             st.session_state.shares_dict[row["Ticker"]] = 57.0
         else:
-            st.session_state.shares_dict[row["Ticker"]] = np.nan  # NaN für automatische Initialisierung
+            st.session_state.shares_dict[row["Ticker"]] = np.nan
 
-# --- Initialisierung für NaN-Shares ---
-for i, row in df.iterrows():
+# --- Initialisierung nur für NaN-Shares ---
+for _, row in df.iterrows():
     ticker = row["Ticker"]
     if pd.isna(st.session_state.shares_dict[ticker]):
         p = row.get("Price", 0)
-        if p > 0 and row.get("MonthlyAlloc",0) > 0:
+        if p > 0 and row.get("MonthlyAlloc", 0) > 0:
             st.session_state.shares_dict[ticker] = round(row["MonthlyAlloc"]*12 / p, FRACTION_PRECISION)
         else:
             st.session_state.shares_dict[ticker] = 0.0
 
 df["Shares"] = df["Ticker"].map(st.session_state.shares_dict)
-
-# --- MarketValue berechnen ---
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 
 # --- Editable Portfolio ---
 st.subheader("Depot bearbeiten")
-editable = st.data_editor(df[["Ticker","Name","Shares","Price","Sector","MonthlyAlloc"]],
+editable_df = df.copy()
+editable_df["Shares"] = editable_df["Ticker"].map(st.session_state.shares_dict)
+
+editable = st.data_editor(editable_df[["Ticker","Name","Shares","Price","Sector","MonthlyAlloc"]],
                           num_rows="dynamic", use_container_width=True)
 
-# --- Übernahme der geänderten Shares ---
+# --- Sofortige Übernahme der neuen Shares ---
 for _, row in editable.iterrows():
     st.session_state.shares_dict[row["Ticker"]] = row["Shares"]
 
-# --- MarketValue aktualisieren ---
 df["Shares"] = df["Ticker"].map(st.session_state.shares_dict)
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 

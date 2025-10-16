@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
-import yfinance as yf
 import numpy as np
+import yfinance as yf
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from pytz import timezone
+import pandas_market_calendars as mcal
 
 st.set_page_config(page_title="Persönliches Musterdepot", layout="wide")
 st.title("💼 Persönliches Optimiertes Musterdepot")
@@ -15,12 +16,14 @@ refresh_interval = st.sidebar.slider("Automatische Kursaktualisierung (Minuten)"
 if st.sidebar.button("Kurse jetzt aktualisieren"):
     st.session_state.refresh = True
 
-# --- Deutsche Feiertage (2025) ---
-DE_HOLIDAYS = [
-    "2025-01-01","2025-04-18","2025-04-21","2025-05-01","2025-05-29",
-    "2025-06-09","2025-10-03","2025-12-25","2025-12-26"
-]
-DE_HOLIDAYS = [pd.Timestamp(d) for d in DE_HOLIDAYS]
+# --- Handelskalender für Xetra ---
+xetra = mcal.get_calendar('XETR')
+def next_trading_day(date):
+    schedule = xetra.schedule(start_date=date, end_date=date + pd.Timedelta(days=365))
+    future_days = schedule.index[schedule.index.date >= date.date()]
+    if len(future_days) == 0:
+        return date
+    return future_days[0]
 
 # --- Depotdefinition ---
 data = [
@@ -63,7 +66,7 @@ def get_price(row):
     except:
         return np.nan
 
-# --- Aktualisierung ---
+# --- Preisaktualisierung ---
 if "refresh" not in st.session_state:
     st.session_state.refresh = True
 if st.session_state.refresh or "Price" not in df.columns:
@@ -101,15 +104,10 @@ weights_within_sector = {
 }
 monthly_plan = {"Tech":200,"Cybersecurity":50,"Renewable":125,"Disruption":100,"Health":50,"Consumer":75}
 
-# --- Prüfen ob Börsentag ---
-def is_trading_day(date):
-    return date.weekday() < 5 and date not in DE_HOLIDAYS
-
 # --- Sparplan automatisch ab 6.11.2025 ---
+plan_day = pd.Timestamp(2025, 11, 6)
+plan_day = next_trading_day(plan_day)
 today = pd.Timestamp(datetime.now(timezone('Europe/Berlin')).date()).tz_localize(None)
-plan_day = pd.Timestamp(2025, 11, 6)  # tz-naiv
-while not is_trading_day(plan_day):
-    plan_day += pd.Timedelta(days=1)
 
 if today >= plan_day:
     for idx, row in df.iterrows():

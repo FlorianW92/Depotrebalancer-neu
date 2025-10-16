@@ -9,7 +9,7 @@ import os
 import pandas_market_calendars as mcal
 
 st.set_page_config(page_title="Persistentes Musterdepot", layout="wide")
-st.title("💼 Persönliches Optimiertes Musterdepot (mit Aktualisieren-Button)")
+st.title("💼 Persönliches Optimiertes Musterdepot (mit VW, aber ohne VW-Gewichtung)")
 
 # --------------------------------------------------------
 # 🔹 Speicherdatei
@@ -35,7 +35,7 @@ data = [
     {"Ticker": "JNJ", "Name": "Johnson & Johnson", "Sector": "Health", "Currency": "USD"},
     {"Ticker": "NVO", "Name": "Novo Nordisk", "Sector": "Health", "Currency": "USD"},
     {"Ticker": "AAPL", "Name": "Apple", "Sector": "Consumer", "Currency": "USD"},
-    {"Ticker": "VOW3.DE", "Name": "Volkswagen", "Sector": "Consumer", "Currency": "EUR"},
+    {"Ticker": "VOW3.DE", "Name": "Volkswagen", "Sector": "Excluded", "Currency": "EUR"},
 ]
 df = pd.DataFrame(data)
 
@@ -71,7 +71,6 @@ if st.button("🔄 Kurse aktualisieren"):
     st.session_state.last_update = datetime.now().strftime("%H:%M:%S")
     st.success("Kurse erfolgreich aktualisiert ✅")
 
-# Falls noch keine Preise vorhanden sind (z.B. erster Start)
 if "Price" not in df.columns or df["Price"].isna().all():
     df["Price"] = df.apply(get_price, axis=1)
 
@@ -83,7 +82,7 @@ if os.path.exists(data_file):
     st.session_state.shares_dict = dict(zip(saved["Ticker"], saved["Shares"]))
 else:
     st.session_state.shares_dict = {t: 0 for t in df["Ticker"]}
-    st.session_state.shares_dict["VOW3.DE"] = 57.213  # fester VW-Bestand
+    st.session_state.shares_dict["VOW3.DE"] = 57.213  # VW fester Bestand
 
 df["Shares"] = df["Ticker"].map(st.session_state.shares_dict)
 
@@ -109,7 +108,7 @@ weights_within_sector = {
     "FSLR": 0.4, "NEE": 0.4, "BEPC": 0.2,
     "TSLA": 0.5, "PLTR": 0.25, "SMCI": 0.25,
     "JNJ": 0.5, "NVO": 0.5,
-    "AAPL": 0.5
+    "AAPL": 1.0
 }
 monthly_plan = {
     "Tech": 200,
@@ -141,7 +140,7 @@ today = pd.Timestamp(datetime.now(timezone('Europe/Berlin')).date()).tz_localize
 if today >= plan_day:
     for idx, row in df.iterrows():
         ticker = row["Ticker"]
-        if ticker == "VOW3.DE":
+        if ticker == "VOW3.DE":  # VW bleibt ausgeschlossen
             continue
         sector = row["Sector"]
         price = row["Price"]
@@ -160,21 +159,23 @@ if today >= plan_day:
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 total_value = df["MarketValue"].sum()
 
-st.markdown(f"**Gesamtwert:** {total_value:,.2f} €")
+st.markdown(f"**Gesamtwert (inkl. VW):** {total_value:,.2f} €")
 st.caption(f"Letztes Update: {st.session_state.get('last_update', 'automatisch')}")
 
 # --------------------------------------------------------
-# 🔹 Umschichtungsvorschläge
+# 🔹 Umschichtungsvorschläge (ohne VW)
 # --------------------------------------------------------
+df_active = df[df["Sector"] != "Excluded"]
 target_weights = {
     "Tech": 0.4, "Cybersecurity": 0.1, "Renewable": 0.2,
     "Disruption": 0.15, "Health": 0.1, "Consumer": 0.05
 }
-sector_values = df.groupby("Sector")["MarketValue"].sum().to_dict()
-sector_weights = {s: (sector_values.get(s, 0) / total_value if total_value > 0 else 0)
+sector_values = df_active.groupby("Sector")["MarketValue"].sum().to_dict()
+active_total = df_active["MarketValue"].sum()
+sector_weights = {s: (sector_values.get(s, 0) / active_total if active_total > 0 else 0)
                   for s in target_weights.keys()}
 
-st.subheader("🔁 Umschichtungsvorschläge")
+st.subheader("🔁 Umschichtungsvorschläge (ohne VW)")
 threshold = 0.05
 for sector, target in target_weights.items():
     current = sector_weights.get(sector, 0)
@@ -187,9 +188,9 @@ if all(abs(sector_weights.get(s, 0) - target_weights[s]) < threshold for s in ta
     st.success("✅ Keine Umschichtung nötig")
 
 # --------------------------------------------------------
-# 🔹 Diagramm
+# 🔹 Diagramm (ohne VW)
 # --------------------------------------------------------
-st.subheader("📈 Sektorverteilung")
+st.subheader("📈 Sektorverteilung (ohne VW)")
 labels = list(target_weights.keys())
 sizes = [sector_weights.get(s, 0) for s in labels]
 if sum(sizes) > 0:
@@ -199,10 +200,10 @@ if sum(sizes) > 0:
     st.pyplot(fig)
 
 # --------------------------------------------------------
-# 🔹 Prozentanteile in Sektoren
+# 🔹 Prozentanteile in Sektoren (ohne VW)
 # --------------------------------------------------------
-st.subheader("🔹 Aktienanteile innerhalb der Sektoren")
-for sector, group in df.groupby("Sector"):
+st.subheader("🔹 Aktienanteile innerhalb der Sektoren (ohne VW)")
+for sector, group in df_active.groupby("Sector"):
     total = group["MarketValue"].sum()
     if total > 0:
         st.write(f"**{sector}** (Gesamtwert: {total:,.2f} €)")
@@ -215,3 +216,4 @@ for sector, group in df.groupby("Sector"):
 # --------------------------------------------------------
 df_save = df[["Ticker", "Shares"]]
 df_save.to_csv(data_file, index=False)
+

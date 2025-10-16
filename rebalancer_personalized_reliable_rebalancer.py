@@ -6,17 +6,12 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from pytz import timezone
 import pandas_market_calendars as mcal
+import os
 
 st.set_page_config(page_title="Persönliches Musterdepot", layout="wide")
 st.title("💼 Persönliches Optimiertes Musterdepot")
 
-# --- Sidebar ---
-st.sidebar.header("Einstellungen")
-refresh_interval = st.sidebar.slider("Automatische Kursaktualisierung (Minuten)", 1, 30, 5)
-if st.sidebar.button("Kurse jetzt aktualisieren"):
-    st.session_state.refresh = True
-
-# --- Handelskalender für Xetra ---
+# --- Handelskalender Xetra ---
 xetra = mcal.get_calendar('XETR')
 def next_trading_day(date):
     schedule = xetra.schedule(start_date=date, end_date=date + pd.Timedelta(days=365))
@@ -66,15 +61,20 @@ def get_price(row):
     except:
         return np.nan
 
-# --- Preisaktualisierung ---
+# --- Preise aktualisieren ---
 if "refresh" not in st.session_state:
     st.session_state.refresh = True
 if st.session_state.refresh or "Price" not in df.columns:
     df["Price"] = df.apply(get_price, axis=1)
     st.session_state.refresh = False
 
-# --- Persistent Shares ---
-if "shares_dict" not in st.session_state:
+# --- Persistente Shares ---
+SHARES_FILE = "shares.csv"
+
+if os.path.exists(SHARES_FILE):
+    shares_df = pd.read_csv(SHARES_FILE, index_col=0)
+    st.session_state.shares_dict = shares_df["Shares"].to_dict()
+else:
     st.session_state.shares_dict = {t:0 for t in df["Ticker"]}
     # VW-Bestand initial
     if not np.isnan(df.loc[df["Ticker"]=="VOW3.DE", "Price"].values[0]):
@@ -84,16 +84,15 @@ df["Shares"] = df["Ticker"].map(st.session_state.shares_dict)
 
 # --- Editable Shares ---
 st.subheader("Depot Shares manuell eingeben")
-edited = st.data_editor(
-    df[["Ticker","Name","Shares"]],
-    num_rows="dynamic",
-    use_container_width=True
-)
+edited = st.data_editor(df[["Ticker","Name","Shares"]], num_rows="dynamic", use_container_width=True)
 for idx, row in edited.iterrows():
     st.session_state.shares_dict[row["Ticker"]] = row["Shares"]
     df.at[idx,"Shares"] = row["Shares"]
 
-# --- Sparplan Definition ---
+# --- Shares in CSV speichern ---
+pd.DataFrame.from_dict(st.session_state.shares_dict, orient="index", columns=["Shares"]).to_csv(SHARES_FILE)
+
+# --- Sparplan ---
 weights_within_sector = {
     "NVDA":0.375, "MSFT":0.25, "GOOGL":0.25, "ASML.AS":0.125,
     "CRWD":0.5, "NOW":0.5,
@@ -104,7 +103,6 @@ weights_within_sector = {
 }
 monthly_plan = {"Tech":200,"Cybersecurity":50,"Renewable":125,"Disruption":100,"Health":50,"Consumer":75}
 
-# --- Sparplan automatisch ab 6.11.2025 ---
 plan_day = pd.Timestamp(2025, 11, 6)
 plan_day = next_trading_day(plan_day)
 today = pd.Timestamp(datetime.now(timezone('Europe/Berlin')).date()).tz_localize(None)
@@ -127,6 +125,8 @@ if today >= plan_day:
         additional_shares = (sector_plan * weight) / price if price>0 else 0
         df.at[idx,"Shares"] = st.session_state.shares_dict.get(ticker,0) + additional_shares
         st.session_state.shares_dict[ticker] = df.at[idx,"Shares"]
+    # CSV aktualisieren nach Sparplan
+    pd.DataFrame.from_dict(st.session_state.shares_dict, orient="index", columns=["Shares"]).to_csv(SHARES_FILE)
     st.success(f"Sparplan automatisch für den {plan_day.date()} ausgeführt ✅")
 
 # --- Market Value ---

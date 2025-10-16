@@ -1,6 +1,7 @@
-streamlit>=1.25.0
+streamlit
 pandas
+numpy
 matplotlib
 yfinance
-numpy
-streamlit-autorefresh
+pytz
+pandas_market_calendars

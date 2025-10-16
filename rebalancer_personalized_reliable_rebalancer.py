@@ -3,19 +3,19 @@ import pandas as pd
 import yfinance as yf
 import numpy as np
 import matplotlib.pyplot as plt
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas_market_calendars as mcal
 
 st.set_page_config(page_title="Optimiertes Musterdepot mit Sparplan", layout="wide")
 st.title("💼 Optimiertes Musterdepot — Manuelle Shares & Sparplan")
 
-# --- Sidebar Einstellungen ---
+# --- Sidebar ---
 st.sidebar.header("Einstellungen")
 refresh_interval = st.sidebar.slider("Automatische Kursaktualisierung (Minuten)", 1, 30, 5)
 if st.sidebar.button("Kurse jetzt aktualisieren"):
     st.session_state.refresh = True
 
-# --- Optimiertes Depot ---
+# --- Depotdaten ---
 data = [
     {"Ticker":"NVDA","Name":"NVIDIA","Sector":"Tech","Currency":"USD"},
     {"Ticker":"MSFT","Name":"Microsoft","Sector":"Tech","Currency":"USD"},
@@ -36,13 +36,13 @@ data = [
 ]
 df = pd.DataFrame(data)
 
-# --- Wechselkurs EUR/USD ---
+# --- Wechselkurs USD → EUR ---
 try:
     eurusd = yf.Ticker("EURUSD=X").history(period="1d", interval="1m")['Close'][-1]
 except:
     eurusd = 1.0
 
-# --- Preisabruf ---
+# --- Kursabruf ---
 def get_price(row):
     try:
         ticker = yf.Ticker(row["Ticker"])
@@ -67,26 +67,22 @@ if "shares_dict" not in st.session_state:
     # VW-Bestand initial
     if not np.isnan(df.loc[df["Ticker"]=="VOW3.DE", "Price"].values[0]):
         st.session_state.shares_dict["VOW3.DE"] = 5300 / df.loc[df["Ticker"]=="VOW3.DE", "Price"].values[0]
-    else:
-        st.session_state.shares_dict["VOW3.DE"] = 0
 
-# --- Editable DataFrame für Anzeige ---
 df["Shares"] = df["Ticker"].map(st.session_state.shares_dict)
 
+# --- Editable DataFrame ---
 st.subheader("Depot Shares eingeben")
 edited = st.data_editor(
     df[["Ticker","Name","Shares"]],
     num_rows="dynamic",
     use_container_width=True
 )
-
-# --- Übernahme der Eingaben ---
+# --- Speichern ---
 for idx, row in edited.iterrows():
     st.session_state.shares_dict[row["Ticker"]] = row["Shares"]
     df.at[idx,"Shares"] = row["Shares"]
 
 # --- Sparplan Logik ---
-# Zielgewicht pro Aktie innerhalb des Sektors
 weights_within_sector = {
     "NVDA":0.375, "MSFT":0.25, "GOOGL":0.25, "ASML.AS":0.125,
     "CRWD":0.5, "NOW":0.5,
@@ -95,39 +91,31 @@ weights_within_sector = {
     "JNJ":0.5, "NVO":0.5,
     "AAPL":0.5, "VOW3.DE":0.5
 }
-# Monatlicher Sparplan pro Sektor
-monthly_plan = {
-    "Tech":200,
-    "Cybersecurity":50,
-    "Renewable":125,
-    "Disruption":100,
-    "Health":50,
-    "Consumer":75
-}
+monthly_plan = {"Tech":200,"Cybersecurity":50,"Renewable":125,"Disruption":100,"Health":50,"Consumer":75}
 
-# --- Handelskalender Xetra ---
+# --- Handelskalender ---
 xetra = mcal.get_calendar('XETR')
 today = pd.Timestamp(datetime.today().date())
 
-# Berechne nächster Sparplantag ab 6.11.
-start_date = pd.Timestamp('2025-11-06')
-# Prüfe nächster gültiger Handelstag
-sched = xetra.valid_days(start_date=start_date, end_date=start_date + pd.DateOffset(months=12))
-if len(sched) > 0:
-    next_trade_day = sched[0]
-else:
-    next_trade_day = start_date
-
-# --- Sparplan nur ausführen an Börsentag ---
-if today >= next_trade_day and today in xetra.valid_days(start_date=today, end_date=today):
-    for idx, row in df.iterrows():
-        sector = row["Sector"]
-        ticker = row["Ticker"]
-        price = row["Price"]
-        sector_plan = monthly_plan.get(sector,0)
-        weight = weights_within_sector.get(ticker,1.0)
-        additional_shares = (sector_plan * weight) / price if price>0 else 0
-        df.at[idx,"Shares"] = st.session_state.shares_dict.get(ticker,0) + additional_shares
+# --- Sparplan Button ---
+st.subheader("Sparplan")
+if st.button("Sparplan ausführen"):
+    # Berechne gültiger Handelstag für diesen Monat
+    month_start = pd.Timestamp(today.year, today.month, 6)
+    valid_days = xetra.valid_days(start_date=month_start, end_date=month_start + pd.DateOffset(days=7))
+    if len(valid_days) > 0:
+        plan_day = valid_days[0]
+        if today >= plan_day:
+            # Berechne neue Shares
+            for idx, row in df.iterrows():
+                sector = row["Sector"]
+                ticker = row["Ticker"]
+                price = row["Price"]
+                sector_plan = monthly_plan.get(sector,0)
+                weight = weights_within_sector.get(ticker,1.0)
+                additional_shares = (sector_plan * weight) / price if price>0 else 0
+                df.at[idx,"Shares"] = st.session_state.shares_dict.get(ticker,0) + additional_shares
+                st.session_state.shares_dict[ticker] = df.at[idx,"Shares"]
 
 # --- Market Value ---
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)

@@ -74,11 +74,10 @@ if st.session_state.refresh or "Price" not in df.columns:
 # --- Persistent Shares ---
 if "shares_dict" not in st.session_state:
     st.session_state.shares_dict = {}
-
 for _, row in df.iterrows():
     ticker = row["Ticker"]
-    if ticker not in st.session_state.shares_dict or pd.isna(st.session_state.shares_dict[ticker]):
-        if ticker=="VOW3.DE":
+    if ticker not in st.session_state.shares_dict:
+        if ticker == "VOW3.DE":
             st.session_state.shares_dict[ticker] = 57.0
         else:
             p = row.get("Price", 0)

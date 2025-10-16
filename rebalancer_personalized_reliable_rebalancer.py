@@ -5,25 +5,14 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from pytz import timezone
+import os
 import pandas_market_calendars as mcal
 
-st.set_page_config(page_title="Persönliches Musterdepot", layout="wide")
-st.title("💼 Persönliches Optimiertes Musterdepot")
+st.set_page_config(page_title="Persistentes Musterdepot", layout="wide")
+st.title("💼 Persönliches Optimiertes Musterdepot (persistente Version)")
 
-# --- Sidebar ---
-st.sidebar.header("Einstellungen")
-refresh_interval = st.sidebar.slider("Automatische Kursaktualisierung (Minuten)", 1, 30, 5)
-if st.sidebar.button("Kurse jetzt aktualisieren"):
-    st.session_state.refresh = True
-
-# --- Handelskalender für Xetra ---
-xetra = mcal.get_calendar('XETR')
-def next_trading_day(date):
-    schedule = xetra.schedule(start_date=date, end_date=date + pd.Timedelta(days=365))
-    future_days = schedule.index[schedule.index.date >= date.date()]
-    if len(future_days) == 0:
-        return date
-    return future_days[0]
+# --- Speicherdatei ---
+data_file = "depot_data.csv"
 
 # --- Depotdefinition ---
 data = [
@@ -73,12 +62,14 @@ if st.session_state.refresh or "Price" not in df.columns:
     df["Price"] = df.apply(get_price, axis=1)
     st.session_state.refresh = False
 
-# --- Persistent Shares ---
-if "shares_dict" not in st.session_state:
+# --- Persistent Shares laden ---
+if os.path.exists(data_file):
+    saved = pd.read_csv(data_file)
+    st.session_state.shares_dict = dict(zip(saved["Ticker"], saved["Shares"]))
+else:
     st.session_state.shares_dict = {t:0 for t in df["Ticker"]}
-    # VW-Bestand initial
-    if not np.isnan(df.loc[df["Ticker"]=="VOW3.DE", "Price"].values[0]):
-        st.session_state.shares_dict["VOW3.DE"] = 5300 / df.loc[df["Ticker"]=="VOW3.DE", "Price"].values[0]
+    # VW-Bestand fix
+    st.session_state.shares_dict["VOW3.DE"] = 57.213
 
 df["Shares"] = df["Ticker"].map(st.session_state.shares_dict)
 
@@ -103,6 +94,15 @@ weights_within_sector = {
     "AAPL":0.5
 }
 monthly_plan = {"Tech":200,"Cybersecurity":50,"Renewable":125,"Disruption":100,"Health":50,"Consumer":75}
+
+# --- Handelskalender für Xetra ---
+xetra = mcal.get_calendar('XETR')
+def next_trading_day(date):
+    schedule = xetra.schedule(start_date=date, end_date=date + pd.Timedelta(days=365))
+    future_days = schedule.index[schedule.index.date >= date.date()]
+    if len(future_days) == 0:
+        return date
+    return future_days[0]
 
 # --- Sparplan automatisch ab 6.11.2025 ---
 plan_day = pd.Timestamp(2025, 11, 6)
@@ -173,3 +173,7 @@ for sector, group in df.groupby("Sector"):
         temp = group.copy()
         temp["PercentOfSector"] = (temp["MarketValue"]/sector_total*100).round(2)
         st.dataframe(temp[["Ticker","Name","Shares","Price","MarketValue","PercentOfSector"]])
+
+# --- Daten speichern ---
+df_save = df[["Ticker","Shares"]]
+df_save.to_csv(data_file, index=False)

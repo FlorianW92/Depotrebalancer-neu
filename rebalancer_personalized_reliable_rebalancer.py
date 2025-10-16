@@ -8,36 +8,36 @@ from streamlit_autorefresh import st_autorefresh
 
 FRACTION_PRECISION = 3
 
-st.set_page_config(page_title="Personal Rebalancer Sparplan", layout="wide")
-st.title("📊 Personal Rebalancer — Sparplan & Euro")
+st.set_page_config(page_title="Depot Rebalancer", layout="wide")
+st.title("📊 Depot Rebalancer — Manuelle Shares Eingabe & Euro")
 
 # --- Sidebar Einstellungen ---
 st.sidebar.header("Einstellungen")
 refresh_interval = st.sidebar.slider("Automatische Kursaktualisierung (Minuten)", 1, 30, 5)
 st_autorefresh(interval=refresh_interval * 60 * 1000, key="auto_refresh")
 
-# --- Depot Definition nach deinem Sparplan ---
-initial = [
+# --- Depotdefinition nach deinem Sparplan ---
+data = [
     # Technologie & KI
-    {"Ticker":"NVDA","Name":"NVIDIA","Sector":"Tech","MonthlyAlloc":80,"Currency":"USD"},
-    {"Ticker":"GOOGL","Name":"Alphabet","Sector":"Tech","MonthlyAlloc":60,"Currency":"USD"},
-    {"Ticker":"MSFT","Name":"Microsoft","Sector":"Tech","MonthlyAlloc":60,"Currency":"USD"},
+    {"Ticker":"NVDA","Name":"NVIDIA","Sector":"Tech","Currency":"USD"},
+    {"Ticker":"GOOGL","Name":"Alphabet","Sector":"Tech","Currency":"USD"},
+    {"Ticker":"MSFT","Name":"Microsoft","Sector":"Tech","Currency":"USD"},
     # Erneuerbare Energien & Infrastruktur
-    {"Ticker":"NEE","Name":"NextEra Energy","Sector":"Renewable","MonthlyAlloc":50,"Currency":"USD"},
-    {"Ticker":"FSLR","Name":"First Solar","Sector":"Renewable","MonthlyAlloc":50,"Currency":"USD"},
-    {"Ticker":"ORSTED.CO","Name":"Ørsted","Sector":"Renewable","MonthlyAlloc":25,"Currency":"EUR"},
+    {"Ticker":"NEE","Name":"NextEra Energy","Sector":"Renewable","Currency":"USD"},
+    {"Ticker":"FSLR","Name":"First Solar","Sector":"Renewable","Currency":"USD"},
+    {"Ticker":"ORSTED.CO","Name":"Ørsted","Sector":"Renewable","Currency":"EUR"},
     # Zukunftstechnologien / Disruption
-    {"Ticker":"TSLA","Name":"Tesla","Sector":"Disruption","MonthlyAlloc":50,"Currency":"USD"},
-    {"Ticker":"PLUG","Name":"Plug Power","Sector":"Disruption","MonthlyAlloc":25,"Currency":"USD"},
-    {"Ticker":"PLTR","Name":"Palantir","Sector":"Disruption","MonthlyAlloc":25,"Currency":"USD"},
+    {"Ticker":"TSLA","Name":"Tesla","Sector":"Disruption","Currency":"USD"},
+    {"Ticker":"PLUG","Name":"Plug Power","Sector":"Disruption","Currency":"USD"},
+    {"Ticker":"PLTR","Name":"Palantir","Sector":"Disruption","Currency":"USD"},
     # Blue Chips
-    {"Ticker":"AAPL","Name":"Apple","Sector":"Blue Chips","MonthlyAlloc":50,"Currency":"USD"},
-    {"Ticker":"JNJ","Name":"Johnson & Johnson","Sector":"Blue Chips","MonthlyAlloc":25,"Currency":"USD"},
+    {"Ticker":"AAPL","Name":"Apple","Sector":"Blue Chips","Currency":"USD"},
+    {"Ticker":"JNJ","Name":"Johnson & Johnson","Sector":"Blue Chips","Currency":"USD"},
     # VW-Bestand
-    {"Ticker":"VOW3.DE","Name":"Volkswagen","Sector":"Blue Chips","MonthlyAlloc":0,"Currency":"EUR"}
+    {"Ticker":"VOW3.DE","Name":"Volkswagen","Sector":"Blue Chips","Currency":"EUR"}
 ]
 
-df = pd.DataFrame(initial)
+df = pd.DataFrame(data)
 
 # --- Button für sofortige Aktualisierung ---
 if "refresh" not in st.session_state:
@@ -73,43 +73,38 @@ if st.session_state.refresh or "Price" not in df.columns:
 
 # --- Persistent Shares ---
 if "shares_dict" not in st.session_state:
-    st.session_state.shares_dict = {}
-for _, row in df.iterrows():
-    ticker = row["Ticker"]
-    if ticker not in st.session_state.shares_dict:
-        if ticker == "VOW3.DE":
-            st.session_state.shares_dict[ticker] = 57.0
-        else:
-            p = row.get("Price", 0)
-            if p > 0 and row.get("MonthlyAlloc", 0) > 0:
-                st.session_state.shares_dict[ticker] = round(row["MonthlyAlloc"]*12 / p, FRACTION_PRECISION)
-            else:
-                st.session_state.shares_dict[ticker] = 0.0
+    st.session_state.shares_dict = {t:0 for t in df["Ticker"]}
+    # VW Bestand initial
+    st.session_state.shares_dict["VOW3.DE"] = 57.0
 
-# --- DataFrame für Editor aus session_state ---
-editable_df = df.copy()
-editable_df["Shares"] = editable_df["Ticker"].map(st.session_state.shares_dict)
+# --- Editable DataFrame aus session_state erstellen ---
+if "editable_df" not in st.session_state:
+    st.session_state.editable_df = df.copy()
+    st.session_state.editable_df["Shares"] = st.session_state.editable_df["Ticker"].map(st.session_state.shares_dict)
 
-# --- Editable DataEditor ---
-st.subheader("Depot bearbeiten")
-editable = st.data_editor(
-    editable_df[["Ticker","Name","Shares","Price","Sector","MonthlyAlloc"]],
+# --- DataEditor nur für Shares ---
+st.subheader("Depot Shares eingeben")
+edited = st.data_editor(
+    st.session_state.editable_df[["Ticker","Name","Shares"]],
     num_rows="dynamic",
     use_container_width=True
 )
 
-# --- Sofortige Übernahme der neuen Shares ---
-for _, row in editable.iterrows():
+# --- Übernahme der manuellen Eingaben ---
+for idx, row in edited.iterrows():
     st.session_state.shares_dict[row["Ticker"]] = row["Shares"]
+    st.session_state.editable_df.at[idx, "Shares"] = row["Shares"]
 
-df["Shares"] = df["Ticker"].map(st.session_state.shares_dict)
-df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
+# --- Market Value berechnen ---
+st.session_state.editable_df["Price"] = df["Price"]
+st.session_state.editable_df["MarketValue"] = (st.session_state.editable_df["Shares"] * st.session_state.editable_df["Price"]).round(2)
+df = st.session_state.editable_df.copy()
 
 # --- Gesamtwert ---
 total_value = df["MarketValue"].sum()
 st.write(f"Stand: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S (UTC)')} — Gesamtwert: {total_value:,.2f} €")
 
-# --- Umschichtungsvorschläge ---
+# --- Umschichtungsvorschläge (optional nach Sparplan-Gewichten) ---
 target_weights = {
     "Tech":200/500,
     "Renewable":125/500,
@@ -154,7 +149,7 @@ sector_groups = df.groupby("Sector")
 for sector, group in sector_groups:
     sector_total = group["MarketValue"].sum()
     if sector_total > 0:
-        st.write(f"**{sector}** (Gesamt: {sector_total:,.2f} €)")
+        st.write(f"**{sector}** (Gesamtwert: {sector_total:,.2f} €)")
         temp = group.copy()
         temp["PercentOfSector"] = (temp["MarketValue"]/sector_total*100).round(2)
         st.dataframe(temp[["Ticker","Name","Shares","Price","MarketValue","PercentOfSector"]])

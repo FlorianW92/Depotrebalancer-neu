@@ -4,6 +4,7 @@ import yfinance as yf
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
+from pytz import timezone
 
 st.set_page_config(page_title="Persönliches Musterdepot", layout="wide")
 st.title("💼 Persönliches Optimiertes Musterdepot")
@@ -98,26 +99,31 @@ weights_within_sector = {
     "JNJ":0.5, "NVO":0.5,
     "AAPL":0.5
 }
-# VW nicht im Sparplan
 monthly_plan = {"Tech":200,"Cybersecurity":50,"Renewable":125,"Disruption":100,"Health":50,"Consumer":75}
 
 # --- Prüfen ob Börsentag ---
 def is_trading_day(date):
     return date.weekday() < 5 and date not in DE_HOLIDAYS
 
-# --- Sparplan automatisch ausführen ---
-today = pd.Timestamp(datetime.today().date())
-plan_day = pd.Timestamp(today.year, today.month, 6)
+# --- Sparplan automatisch ab 6.11.2025 ---
+today = pd.Timestamp(datetime.now(timezone('Europe/Berlin')).date())
+plan_day = pd.Timestamp(2025, 11, 6, tz=timezone('Europe/Berlin'))
 while not is_trading_day(plan_day):
     plan_day += pd.Timedelta(days=1)
 
-if today >= plan_day:
+if today >= plan_day.date():
     for idx, row in df.iterrows():
         ticker = row["Ticker"]
         if ticker=="VOW3.DE":
-            continue  # VW nicht im Sparplan
+            continue
         sector = row["Sector"]
-        price = row["Price"]
+        try:
+            ticker_data = yf.Ticker(ticker).history(period="1d", interval="1m", prepost=False)
+            price = float(ticker_data['Close'].iloc[-1])
+            if row["Currency"]=="USD":
+                price /= eurusd
+        except:
+            price = row["Price"]
         sector_plan = monthly_plan.get(sector,0)
         weight = weights_within_sector.get(ticker,1.0)
         additional_shares = (sector_plan * weight) / price if price>0 else 0

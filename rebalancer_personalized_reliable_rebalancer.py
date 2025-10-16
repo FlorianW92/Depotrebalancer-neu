@@ -8,15 +8,15 @@ from streamlit_autorefresh import st_autorefresh
 
 FRACTION_PRECISION = 3
 
-st.set_page_config(page_title="Personal Rebalancer Stabil", layout="wide")
-st.title("📊 Personal Rebalancer — Stabil & Zuverlässig")
+st.set_page_config(page_title="Personal Rebalancer Komplett", layout="wide")
+st.title("📊 Personal Rebalancer — Vollständig & Stabil (Euro)")
 
 # --- Sidebar Einstellungen ---
 st.sidebar.header("Einstellungen")
 refresh_interval = st.sidebar.slider("Automatische Kursaktualisierung (Minuten)", 1,30,5)
 st_autorefresh(interval=refresh_interval*60*1000, key="auto_refresh")
 
-# --- Depot ---
+# --- Depot Definition ---
 initial = [
     {"Ticker":"NVDA","Name":"NVIDIA","Sector":"Tech","MonthlyAlloc":75,"Currency":"USD"},
     {"Ticker":"MSFT","Name":"Microsoft","Sector":"Tech","MonthlyAlloc":50,"Currency":"USD"},
@@ -38,43 +38,43 @@ initial = [
 
 df = pd.DataFrame(initial)
 
-# --- Button Update ohne st.experimental_rerun direkt ---
+# --- Button für sofortige Aktualisierung ---
 if "refresh" not in st.session_state:
     st.session_state.refresh = False
-
 if st.button("Kurse jetzt aktualisieren"):
     st.session_state.refresh = True
 
-# --- Preisabruf mit stabiler Methode ---
+# --- EUR/USD Wechselkurs ---
+try:
+    eurusd = yf.Ticker("EURUSD=X").history(period="1d", interval="1m")['Close'][-1]
+except:
+    eurusd = 1.0  # fallback falls Abfrage fehlschlägt
+
+# --- Preisabruf in Euro ---
 def get_price(row):
     t = row["Ticker"]
     try:
         ticker = yf.Ticker(t)
         if row["Currency"]=="USD":
-            # Letzte Minute des heutigen Tages
             hist = ticker.history(period="1d", interval="1m")
             if len(hist) > 0:
-                return float(hist['Close'][-1])
+                price_usd = float(hist['Close'][-1])
             else:
-                # Fallback Tageskurs
                 hist = ticker.history(period="1d")
-                return float(hist['Close'][-1])
+                price_usd = float(hist['Close'][-1])
+            return price_usd / eurusd
         else:
-            # DE-Ticker Tageskurs
             hist = ticker.history(period="1d")
             return float(hist['Close'][-1])
     except:
         return np.nan
 
-# --- Kursaktualisierung nur wenn nötig ---
 if st.session_state.refresh or "Price" not in df.columns:
-    prices = []
-    for _, row in df.iterrows():
-        prices.append(get_price(row))
+    prices = [get_price(row) for _, row in df.iterrows()]
     df["Price"] = prices
     st.session_state.refresh = False
 
-# --- Shares und MarketValue ---
+# --- Berechnung Shares & MarketValue ---
 def derive_shares(row):
     if row["Ticker"]=="VOW3.DE":
         return 57.0
@@ -89,7 +89,8 @@ df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 
 # --- Editable Portfolio ---
 st.subheader("Depot bearbeiten")
-editable = st.data_editor(df[["Ticker","Name","Shares","Price","Sector","MonthlyAlloc","MarketValue"]], num_rows="dynamic", use_container_width=True)
+editable = st.data_editor(df[["Ticker","Name","Shares","Price","Sector","MonthlyAlloc","MarketValue"]],
+                          num_rows="dynamic", use_container_width=True)
 
 total_value = editable["MarketValue"].sum()
 st.write(f"Stand: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S (UTC)')} — Gesamtwert: {total_value:,.2f} €")
@@ -116,7 +117,7 @@ if suggestions:
 else:
     st.success("Keine Umschichtungen nötig")
 
-# --- Sektorverteilung Grafik ---
+# --- Sektorverteilung ---
 st.subheader("Sektorverteilung")
 labels = list(target_weights.keys())
 sizes = [sector_weights.get(s,0) for s in labels]

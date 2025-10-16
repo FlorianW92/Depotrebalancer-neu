@@ -3,21 +3,21 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
+from datetime import datetime
 from pytz import timezone
 import os
 import pandas_market_calendars as mcal
 
-st.set_page_config(page_title="Persistentes Musterdepot", layout="wide")
-st.title("💼 Persönliches Optimiertes Musterdepot (mit VW, aber ohne VW-Gewichtung)")
+st.set_page_config(page_title="Optimiertes Musterdepot", layout="wide")
+st.title("💼 Persönliches Musterdepot (VW sichtbar, aber nicht gewichtet)")
 
 # --------------------------------------------------------
-# 🔹 Speicherdatei
+# Speicherdatei
 # --------------------------------------------------------
 data_file = "depot_data.csv"
 
 # --------------------------------------------------------
-# 🔹 Depotdefinition
+# Depotdefinition
 # --------------------------------------------------------
 data = [
     {"Ticker": "NVDA", "Name": "NVIDIA", "Sector": "Tech", "Currency": "USD"},
@@ -40,7 +40,7 @@ data = [
 df = pd.DataFrame(data)
 
 # --------------------------------------------------------
-# 🔹 Wechselkurs EUR/USD
+# Wechselkurs EUR/USD
 # --------------------------------------------------------
 try:
     eurusd = yf.Ticker("EURUSD=X").history(period="1d")['Close'][-1]
@@ -48,7 +48,7 @@ except Exception:
     eurusd = 1.0
 
 # --------------------------------------------------------
-# 🔹 Preisabruf
+# Preisabruf
 # --------------------------------------------------------
 def get_price(row):
     try:
@@ -64,7 +64,7 @@ def get_price(row):
         return np.nan
 
 # --------------------------------------------------------
-# 🔹 Aktualisieren-Button
+# Aktualisieren-Button
 # --------------------------------------------------------
 if st.button("🔄 Kurse aktualisieren"):
     df["Price"] = df.apply(get_price, axis=1)
@@ -75,7 +75,7 @@ if "Price" not in df.columns or df["Price"].isna().all():
     df["Price"] = df.apply(get_price, axis=1)
 
 # --------------------------------------------------------
-# 🔹 Bestehende Shares laden oder initialisieren
+# Bestehende Shares laden oder initialisieren
 # --------------------------------------------------------
 if os.path.exists(data_file):
     saved = pd.read_csv(data_file)
@@ -87,7 +87,7 @@ else:
 df["Shares"] = df["Ticker"].map(st.session_state.shares_dict)
 
 # --------------------------------------------------------
-# 🔹 Manuelle Eingabe der Shares
+# Manuelle Eingabe der Shares
 # --------------------------------------------------------
 st.subheader("📊 Depot Shares manuell eingeben")
 edited = st.data_editor(
@@ -100,7 +100,7 @@ for idx, row in edited.iterrows():
     df.at[idx, "Shares"] = row["Shares"]
 
 # --------------------------------------------------------
-# 🔹 Sparplan
+# Sparplanverteilung
 # --------------------------------------------------------
 weights_within_sector = {
     "NVDA": 0.375, "MSFT": 0.25, "GOOGL": 0.25, "ASML.AS": 0.125,
@@ -120,7 +120,7 @@ monthly_plan = {
 }
 
 # --------------------------------------------------------
-# 🔹 Feiertags- & Wochenendlogik (Xetra)
+# Feiertags- & Wochenendlogik (Xetra)
 # --------------------------------------------------------
 xetra = mcal.get_calendar('XETR')
 def next_trading_day(date):
@@ -131,7 +131,7 @@ def next_trading_day(date):
     return future_days[0]
 
 # --------------------------------------------------------
-# 🔹 Automatische Ausführung ab 6.11.2025
+# Automatische Ausführung ab 6.11.2025
 # --------------------------------------------------------
 plan_day = pd.Timestamp(2025, 11, 6)
 plan_day = next_trading_day(plan_day)
@@ -140,7 +140,7 @@ today = pd.Timestamp(datetime.now(timezone('Europe/Berlin')).date()).tz_localize
 if today >= plan_day:
     for idx, row in df.iterrows():
         ticker = row["Ticker"]
-        if ticker == "VOW3.DE":  # VW bleibt ausgeschlossen
+        if ticker == "VOW3.DE":  # VW ausgeschlossen
             continue
         sector = row["Sector"]
         price = row["Price"]
@@ -154,7 +154,7 @@ if today >= plan_day:
     st.success(f"✅ Sparplan automatisch ausgeführt am {plan_day.date()}")
 
 # --------------------------------------------------------
-# 🔹 Berechnungen
+# Berechnungen
 # --------------------------------------------------------
 df["MarketValue"] = (df["Shares"] * df["Price"]).round(2)
 total_value = df["MarketValue"].sum()
@@ -163,7 +163,7 @@ st.markdown(f"**Gesamtwert (inkl. VW):** {total_value:,.2f} €")
 st.caption(f"Letztes Update: {st.session_state.get('last_update', 'automatisch')}")
 
 # --------------------------------------------------------
-# 🔹 Umschichtungsvorschläge (ohne VW)
+# Umschichtungsvorschläge (VW ausgeschlossen)
 # --------------------------------------------------------
 df_active = df[df["Sector"] != "Excluded"]
 target_weights = {
@@ -175,7 +175,7 @@ active_total = df_active["MarketValue"].sum()
 sector_weights = {s: (sector_values.get(s, 0) / active_total if active_total > 0 else 0)
                   for s in target_weights.keys()}
 
-st.subheader("🔁 Umschichtungsvorschläge (ohne VW)")
+st.subheader("🔁 Umschichtungsvorschläge (VW ausgeschlossen)")
 threshold = 0.05
 for sector, target in target_weights.items():
     current = sector_weights.get(sector, 0)
@@ -188,7 +188,7 @@ if all(abs(sector_weights.get(s, 0) - target_weights[s]) < threshold for s in ta
     st.success("✅ Keine Umschichtung nötig")
 
 # --------------------------------------------------------
-# 🔹 Diagramm (ohne VW)
+# Diagramm (VW ausgeschlossen)
 # --------------------------------------------------------
 st.subheader("📈 Sektorverteilung (ohne VW)")
 labels = list(target_weights.keys())
@@ -200,9 +200,9 @@ if sum(sizes) > 0:
     st.pyplot(fig)
 
 # --------------------------------------------------------
-# 🔹 Prozentanteile in Sektoren (ohne VW)
+# Prozentanteile in Sektoren (VW ausgeschlossen)
 # --------------------------------------------------------
-st.subheader("🔹 Aktienanteile innerhalb der Sektoren (ohne VW)")
+st.subheader("🔹 Aktienanteile innerhalb der Sektoren (VW ausgeschlossen)")
 for sector, group in df_active.groupby("Sector"):
     total = group["MarketValue"].sum()
     if total > 0:
@@ -212,8 +212,7 @@ for sector, group in df_active.groupby("Sector"):
         st.dataframe(temp[["Ticker", "Name", "Shares", "Price", "MarketValue", "PercentOfSector"]])
 
 # --------------------------------------------------------
-# 🔹 Daten speichern
+# Daten speichern
 # --------------------------------------------------------
 df_save = df[["Ticker", "Shares"]]
 df_save.to_csv(data_file, index=False)
-

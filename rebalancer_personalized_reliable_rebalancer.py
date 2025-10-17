@@ -37,7 +37,12 @@ data = [
 df = pd.DataFrame(data)
 
 # -------------------------------
-# Wechselkurs
+# Alphabetisch sortieren
+# -------------------------------
+df = df.sort_values(by="Name").reset_index(drop=True)
+
+# -------------------------------
+# Wechselkurs USD->EUR
 # -------------------------------
 try:
     eurusd = yf.Ticker("EURUSD=X").history(period="1d")['Close'][-1]
@@ -59,13 +64,13 @@ def get_price(row):
     except Exception:
         return np.nan
 
+if "Price" not in df.columns or df["Price"].isna().all():
+    df["Price"] = df.apply(get_price, axis=1)
+
 if st.button("🔄 Kurse aktualisieren"):
     df["Price"] = df.apply(get_price, axis=1)
     st.session_state.last_update = datetime.now().strftime("%H:%M:%S")
     st.success("Kurse aktualisiert ✅")
-
-if "Price" not in df.columns or df["Price"].isna().all():
-    df["Price"] = df.apply(get_price, axis=1)
 
 # -------------------------------
 # Shares laden
@@ -120,7 +125,7 @@ monthly = {
 
 if today >= plan_day:
     for idx, row in df.iterrows():
-        if row["Ticker"] == "VOW3.DE":  # VW wird übersprungen
+        if row["Ticker"] == "VOW3.DE":
             continue
         sector = row["Sector"]
         plan = monthly.get(sector, 0)
@@ -145,36 +150,32 @@ st.markdown(f"**Gesamtwert (inkl. VW):** {total_value:,.2f} €")
 df_active = df[df["Sector"] != "Excluded"]
 
 # -------------------------------
-# Neuer Umschichtungsplan nach Aktiengewicht
+# Umschichtungsvorschläge (Teil-/Komplettverkäufe)
 # -------------------------------
-st.subheader("🔁 Umschichtungsvorschläge nach Aktiengewicht (ohne VW)")
 targets = {"Tech": 0.4, "Cybersecurity": 0.1, "Renewable": 0.2,
            "Disruption": 0.15, "Health": 0.1, "Consumer": 0.05}
 
-for sector, group in df_active.groupby("Sector"):
-    total_sector_value = group["MarketValue"].sum()
-    for idx, row in group.iterrows():
-        # Zielgewicht innerhalb des Sektors: proportionale Aufteilung
-        target_value = total_sector_value * (weights.get(row["Ticker"], 1.0) * monthly.get(sector,0) / monthly.get(sector,1))
-        actual_value = row["MarketValue"]
-        diff_pct = (actual_value - target_value) / target_value if target_value > 0 else 0
+sector_values = df_active.groupby("Sector")["MarketValue"].sum().to_dict()
+active_total = df_active["MarketValue"].sum()
+sector_weights = {s: (sector_values.get(s, 0) / active_total if active_total > 0 else 0) for s in targets.keys()}
 
-        if diff_pct > 0.05:
-            st.warning(f"📉 {row['Name']} ({sector}) über Zielwert um {diff_pct*100:.1f}% → Teilverkauf erwägen")
-        elif diff_pct < -0.05:
-            st.info(f"📈 {row['Name']} ({sector}) unter Zielwert um {-diff_pct*100:.1f}% → Aufstocken")
-        else:
-            st.success(f"✅ {row['Name']} ({sector}) im Zielbereich ({diff_pct*100:.1f}%)")
+st.subheader("🔁 Umschichtungsvorschläge (ohne VW)")
+for s, t in targets.items():
+    diff = sector_weights.get(s, 0) - t
+    if diff > 0.05:
+        st.warning(f"📉 {s}: übergewichtet um {diff*100:.1f}%. Erwäge Teil- oder Komplettverkäufe einzelner Aktien im Sektor.")
+    elif diff < -0.05:
+        st.info(f"📈 {s}: untergewichtet um {-diff*100:.1f}%. Investiere mehr in die einzelnen Aktien des Sektors.")
+if all(abs(sector_weights.get(s, 0) - targets[s]) < 0.05 for s in targets):
+    st.success("✅ Keine Umschichtung nötig")
 
 # -------------------------------
 # Pie Chart
 # -------------------------------
 st.subheader("📈 Sektorverteilung (VW ausgeschlossen)")
 fig, ax = plt.subplots()
-sector_values = df_active.groupby("Sector")["MarketValue"].sum()
-sizes = sector_values.values
-labels = sector_values.index
-ax.pie(sizes, labels=labels, autopct='%1.1f%%')
+sizes = [sector_weights.get(s, 0) for s in targets.keys()]
+ax.pie(sizes, labels=targets.keys(), autopct='%1.1f%%')
 ax.axis("equal")
 st.pyplot(fig)
 
@@ -189,6 +190,6 @@ for sector, group in df_active.groupby("Sector"):
     st.dataframe(group[["Ticker", "Name", "Shares", "Price", "MarketValue", "PercentOfSector"]])
 
 # -------------------------------
-# Speichern
+# CSV speichern
 # -------------------------------
 df[["Ticker", "Shares"]].to_csv(data_file, index=False)
